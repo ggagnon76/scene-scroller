@@ -1,48 +1,43 @@
 {
-  "name": "module",
-  "title": "New Module",
-  "description": "",
+  "name": "scene-scroller",
+  "title": "Scene Scroller",
+  "description": "A software workflow to add and remove random or predetermined tiles to or from a scene, to create a flowing scene that continuously changes.",
   "version": "This is auto replaced",
   "library": "false",
   "manifestPlusVersion": "1.0.0",
-  "minimumCoreVersion": "0.7.9",
-  "compatibleCoreVersion": "0.7.9",
+  "minimumCoreVersion": "9",
+  "compatibleCoreVersion": "9",
   "authors": [
     {
-      "name": "The League of Extraordinary FVTT Developers",
-      "url": "https://github.com/League-of-Foundry-Developers",
-      "discord": "discordID#0001"
+      "name": "Gilles Gagnon, aka Kerrec Snowmane",
+      "url": "https://github.com/ggagnon76/scene-scroller",
+      "discord": "Kerrec Snowmane#5264"
     }
   ],
   "dependencies": [
-
+    {"name": "scene-tiler"},
+    {"name": "lib-wrapper"}
   ],
   "conflicts": [
     
   ],
   "esmodules": [
-    "/scripts/module.js"
+    "ss-initialize.js"
   ],
   "scripts": [
-    "/scripts/lib/lib.js"
+    
   ],
   "styles": [
-    "/styles/module.css"
+    "/styles/scenescroller.css"
   ],
   "languages": [
-    {
-      "lang": "en",
-      "name": "English",
-      "path": "languages/en.json"
-    }
+    
   ],
+  "socket" : true,
   "url": "This is auto replaced",
   "manifest": "This is auto replaced",
   "download": "This is auto replaced",
   "media": [
-    {
-      "type": "icon",
-      "url": "https://avatars2.githubusercontent.com/u/71292812?s=400&u=ccdb4eeb7abf551ca8f314e5a9bfd0479a4d3d41&v=4"
-    }
+    
   ]
 }
