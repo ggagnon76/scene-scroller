@@ -7,7 +7,7 @@ import { ModuleName } from "../ss-initialize";
  *  @param {}           args    - The content to be output to console.log
  *  @return {void}
  */
-function log(force, ...args) {
+export function log(force, ...args) {
     try {
         const isDebugging = game.modules.get('_dev-mode')?.api?.getPackageDebugValue(ModuleName);
 
@@ -48,5 +48,43 @@ export function hasDependencies(...args) {
     if (notInstalled || notActivated) return false;
 
     if (game.user.isGM) ui.notifications.info("Scene Zoetrope | All module dependencies are installed and activated!");
+    return true;
+}
+
+/** Returns a compendium scene document when given a pack name and scene name
+ * @param {string}  pack    - The name of the compendium pack
+ * @param {string}  scene   - The name of the scene in the above compendium pack
+ * @returns {object}        - SceneDocument?
+ */
+ export async function getSource(pack, scene) {
+    const compndm = game.packs.filter(p => p.title === pack)[0];
+    const clctn = compndm.collection;
+    const scn_id = compndm.index.getName(scene)._id;
+    const uuid = `Compendium.${clctn}.${scn_id}`;
+    const source = await fromUuid(uuid);
+    return source;
+}
+
+/**
+ * A Function that will evaluate the largest required scene size and set the scene to that size.
+ * Foundry Core will propagate that change to all clients
+ * @param {Scene}   scn         - The main Scene Scroller Scene
+ * @param {Array}   actvTiles   - The current (or anticipated) array of tiles in the scene
+ * @return {Boolean}
+ */
+export function resizeScene(scn, actvTiles) {
+    if (!scn instanceof Scene) {
+        log(false, "Scene argument passed to resizeScene function is not a scene object");
+        log(false, scn)
+        return false;
+    }
+    if (!actvTiles.length) {
+        log(false, "Array of tiles passed to resizeScene function is empty.")
+        return false;
+    }
+
+    // Logic to figure out the required scene size...
+
+    // When all is completed successfully
     return true;
 }
