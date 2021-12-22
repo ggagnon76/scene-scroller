@@ -1,7 +1,7 @@
 {
   "name": "scene-scroller",
   "title": "Scene Scroller",
-  "description": "A software workflow to add and remove random or predetermined tiles to or from a scene, to create a flowing scene that continuously changes.",
+  "description": "A software workflow to add and remove predetermined compendium scenes as tiles, to or from a primary scene, to create a flowing scene that continuously changes.",
   "version": "This is auto replaced",
   "library": "false",
   "manifestPlusVersion": "1.0.0",
