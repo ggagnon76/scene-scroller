@@ -1,5 +1,5 @@
 import { ModuleName } from "../ss-initialize.js";
-import { log, resizeScene } from "./Functions.js";
+import { deleteTilerTile, getSource, log, resizeScene, transferCompendiumSceneFlags } from "./Functions.js";
 import { ScrollerSelectScene } from "./Forms.js";
 
 /**
@@ -86,8 +86,14 @@ export class SceneScroller {
 
         // The scene tiler module will create a tile out of the selected compendium scene, centering it in our scene.
         const myTile = await SceneTiler.create(source, {x: d.sceneWidth/2, y: d.sceneHeight/2, populate: true, centered: true});
+        if ( !myTile) {
+            log(false, "Scene Scroller scene initialization failed because Scene Tiler failed to create a tile.")
+            return;
+        }
 
-        // TO-DO: Transfer flags from compendium scene (source) and add them to myTile.
+        // Transfer flags from compendium scene (source) and add them to myTile.
+        const isTransfer = transferCompendiumSceneFlags(source, myTile);
+        if ( !isTransfer) return;
 
         // Prepare the flag data for the scene
         const sceneFlagData = JSON.parse(JSON.stringify(this.sceneScrollerSceneFlags));
@@ -96,11 +102,63 @@ export class SceneScroller {
         // Resize the scene so that it fits around the new tile with 1 grid square of padding
         const isResize = resizeScene(canvas.scene, sceneFlagData.SceneTilerTileIDsArray);
         if (!isResize) {
-            ui.notifications.error("Scene failed to resize to fit Scene-Tiler tile.")
-            log(false, "Scene Scroller scene initialization failed because the resizeScene function failed.")
+            ui.notifications.error("Scene failed to resize to fit Scene-Tiler tile.");
+            log(false, "Scene Scroller scene initialization failed because the resizeScene function failed.");
+            deleteTilerTile(myTile);
             return;
         }
 
+        // Save flags to the scene.
+        canvas.scene.setFlag(ModuleName, "sceneFlags", sceneFlagData);
+
+    }
+
+    /**
+     * This method should be invoked by a trigger (button, condition, etc...) to spawn a new tile that a
+     * token will soon be able to see with token vision.  The trigger can originate from a user and will
+     * have to be passed to the GM via socket to execute.
+     * @param {String}      tileUUID      - a UUID pointing to a scene in a compendium.
+     * @return {void}
+     */
+    static async spawnLinkedTile(tileUUID) {
+        // Just in case...
+        if (!game.user.isGM) return;
+
+        const source = await fromUuid(tileUUID);
+        if (source === null) {
+            log(false, "Linked scene could not be found via the UUID.");
+            log(false, tileUUID);
+            return;
+        }
+
+        const d = canvas.dimensions;
+
+        // The scene tiler module will create a tile out of the selected compendium scene, centering it in our scene.
+        const myTile = await SceneTiler.create(source, {x: d.sceneWidth/2, y: d.sceneHeight/2, populate: true, centered: true});
+        if ( !myTile) {
+            log(false, "Linked scene spawn failed because Scene Tiler failed to create a tile.")
+            return;
+        }
+
+        // Transfer flags from compendium scene (source) and add them to myTile.
+        const isTransfer = transferCompendiumSceneFlags(source, myTile);
+        if ( !isTransfer) return;
+
+        // Prepare the flag data for the scene
+        const sceneFlagData = JSON.parse(JSON.stringify(canvas.scene.getFlag(ModuleName, "sceneFlags")));
+        sceneFlagData.SceneTilerTileIDsArray.push(myTile.id);
+
+        // Resize the scene so that it fits around the new tile with 1 grid square of padding
+        const isResize = resizeScene(canvas.scene, sceneFlagData.SceneTilerTileIDsArray);
+        if (!isResize) {
+            ui.notifications.error("Scene failed to resize to fit Scene-Tiler tile.");
+            log(false, "Scene Scroller scene initialization failed because the resizeScene function failed.");
+            deleteTilerTile(myTile);
+            return;
+        }
+
+        // Save flags to the scene.
+        canvas.scene.setFlag(ModuleName, "sceneFlags", sceneFlagData);
 
     }
 

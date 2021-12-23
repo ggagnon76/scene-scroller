@@ -66,11 +66,21 @@ export function hasDependencies(...args) {
 }
 
 /**
+ * A function that clears all the placeable objects referenced by the Tiler Tile, then deletes the tile.
+ * @param {Tile}    tile        - The Scene Tiler tile to be deleted.
+ * @return {void}
+ */
+export async function deleteTilerTile(tile) {
+    await SceneTiler.clearSceneTile(tile);
+    await canvas.scene.deleteEmbeddedDocuments("Tile", [tile.id]);
+}
+
+/**
  * A Function that will evaluate the largest required scene size and set the scene to that size.
  * Foundry Core will propagate that change to all clients
  * @param {Scene}   scn         - The main Scene Scroller Scene
- * @param {Array}   actvTiles   - The current (or anticipated) array of tiles in the scene
- * @return {Boolean}
+ * @param {Array}   actvTiles   - The current (or anticipated) array of tiles ID's in the scene
+ * @return {Boolean}            - If the function fails, it will return false
  */
 export function resizeScene(scn, actvTiles) {
     if (!scn instanceof Scene) {
@@ -86,5 +96,25 @@ export function resizeScene(scn, actvTiles) {
     // Logic to figure out the required scene size...
 
     // When all is completed successfully
+    return true;
+}
+
+/**
+ * This function will retrieve the flags from the compendium scene and transfer them to the tile.
+ * @param {Scene}               source      - The scene from the compendium
+ * @param {Tile}                tile        - The tile to add the flags to
+ * @return {Boolean}                        - If the function fails, it will return false
+ */
+export async function transferCompendiumSceneFlags(source, tile) {
+    const flags = source.getFlag(ModuleName, "linkedTiles");
+    if ( !flags ) {
+        log(false, "The compendium scene has no links in flags or the getFlag method failed.");
+        log(false, source);
+        deleteTilerTile(tile); 
+        return false;
+    }
+
+    await tile.setFlag(ModuleName, "linkedTiles", flags);
+
     return true;
 }
