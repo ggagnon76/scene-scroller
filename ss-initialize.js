@@ -9,6 +9,8 @@ let isReady = false;
 export const ModuleName = "scene-scroller";
 // Convenience variable to insert the module title where required
 export const ModuleTitle = "Scene Scroller";
+// Convenience variable when calling game.socket
+export const SocketModuleName = "module." + ModuleName
 
 const dependencies = ["scene-tiler", "lib-wrapper"];
 
@@ -35,7 +37,7 @@ Hooks.once('ready', () => {
         return wrapped(data, options, userId);
       })
 
-    game.socket.on("module." + ModuleName, message_handler);
+    game.socket.on(SocketModuleName, message_handler);
     game.modules.get(ModuleName).api = SceneScroller;
 })
 

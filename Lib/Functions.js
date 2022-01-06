@@ -1,4 +1,4 @@
-import { ModuleName, ModuleTitle } from "../ss-initialize.js";
+import { ModuleName, ModuleTitle, SocketModuleName } from "../ss-initialize.js";
 import { SceneScroller } from "./SceneScroller.js";
 
 /** A wrapper function that works with the Foundryvtt-devMode module to output debugging info
@@ -9,15 +9,13 @@ import { SceneScroller } from "./SceneScroller.js";
  *  @return {void}
  */
 export function log(force, ...args) {
-    try {
-        const isDebugging = game.modules.get('_dev-mode')?.api?.getPackageDebugValue(ModuleName);
+    const isDebugging = game.modules.get('_dev-mode')?.api?.getPackageDebugValue(ModuleName);
 
-        if ( isDebugging ) {
-            console.log(ModuleTitle,  " debugging | ", ...args);
-        } else if ( force ) {
-            console.log(ModuleTitle, " | ", ...args)
-        }
-    } catch (e) {}
+    if ( isDebugging ) {
+        console.log(ModuleTitle,  " debugging | ", ...args);
+    } else if ( force ) {
+        console.log(ModuleTitle, " | ", ...args)
+    }
 }
 
 /** This function checks that all dependencies are installed and activated.
@@ -74,7 +72,7 @@ export function hasDependencies(args) {
 export async function deleteTilerTile(tile) {
 
     if (!game.user.isGM) {
-        log(false, "A non-GM user triggered the largestSceneSize() function.");
+        log(false, "A non-GM user triggered the deleteTilerTile() function.");
         return false;
     }
 
@@ -82,31 +80,15 @@ export async function deleteTilerTile(tile) {
     await canvas.scene.deleteEmbeddedDocuments("Tile", [tile.id]);
 }
 
-/** A function that will resize the scene, and translate all placeables back to a determined coordinate.
- *  Core will propagate this scene change to all clients.
- *  @param {Object}         size        - An object with form {width: <Number>, height: <Number>}
+/** Trigger a refresh of the canvas scene to update the background outline and other rects.
+ *  Has to be executed on GM client and player clients via socket.
+ *  @param {Object}         size        - the new scene size, format: {width: <Number>, height: <Number>}
  *  @return {void}
  */
-async function resizeScene(size) {
+function refreshSceneAfterResize(size) {
 
-    if (!game.user.isGM) {
-        log(false, "A non-GM user triggered the resizeScene() function.");
-        return false;
-    }
-
-    // Resize the scene to fit either width or height, then scale to fill screen.
     const d = canvas.dimensions;
 
-    // Will need to know the size of the padding pre-update, to move all placeables post-update.
-    const prePadding = {x: d.paddingX, y: d.paddingY};
-    const padding = canvas.scene.data.padding;
-
-    // This update should not trigger a canvas.draw()
-    SceneScroller.PreventCanvasDraw = true;
-
-    await canvas.scene.update({width: size.width + 2 * d.size, height: size.height + 2 * d.size});
-
-    // Update the underlying data since we're preventing a canvas.draw()
     canvas.dimensions = canvas.constructor.getDimensions({
         width: size.width + 2 * d.size,
         height: size.height + 2 * d.size,
@@ -120,6 +102,34 @@ async function resizeScene(size) {
     canvas.stage.hitArea = new PIXI.Rectangle(0, 0, canvas.dimensions.width, canvas.dimensions.height);
     canvas.msk.clear().beginFill(0xFFFFFF, 1.0).drawShape(canvas.dimensions.rect).endFill();
     canvas.background.drawOutline(canvas.outline);
+}
+
+/** A function that will resize the scene, and translate all placeables back to a determined coordinate.
+ *  Core will propagate this scene size change to all clients.
+ *  Core will NOT translate the placeables for every client!
+ *  @param {Object}         size        - An object with form {width: <Number>, height: <Number>}
+ *  @return {void}
+ */
+async function resizeScene(size) {
+
+    if (!game.user.isGM) {
+        log(false, "A non-GM user triggered the resizeScene() function.");
+        return false;
+    }
+
+    const d = canvas.dimensions;
+
+    // Will need to know the size of the padding pre-update, to move all placeables post-update.
+    const prePadding = {x: d.paddingX, y: d.paddingY};
+    const padding = canvas.scene.data.padding;
+
+    // This update should not trigger a canvas.draw()
+    socketWrapper("preventCanvasDrawTrue");
+
+    await canvas.scene.update({width: size.width + 2 * d.size, height: size.height + 2 * d.size});
+
+    // Update the underlying data since we're preventing a canvas.draw()
+    socketWrapper("refreshAfterResize", size)
 
     // Now move all placeables by a to-be-determined vector
     const postPadding = {
@@ -131,6 +141,8 @@ async function resizeScene(size) {
         x: postPadding.x - prePadding.x,
         y: postPadding.y - prePadding.y
     }
+
+    if (vector.x === 0 && vector.y === 0) return;
 
     await canvas.pan( {
         x: canvas.stage.pivot.x + vector.x,
@@ -154,7 +166,6 @@ async function resizeScene(size) {
 
 /**
  * A Function that will evaluate the largest required scene size and set the scene to that size.
- * Foundry Core will automatically propagate that change to all clients
  * @param {Scene}   scn         - The main Scene Scroller Scene
  * @param {Array}   actvTiles   - The current (or anticipated) array of tiles ID's in the scene
  * @return {Boolean}            - If the function fails, it will return false
@@ -185,14 +196,14 @@ async function largestSceneSize(scn, actvTiles) {
         // For this tile, get all the possible linked tiles by their UUID's
         const tile = canvas.background.get(tileID);
         const uuidArray = tile.document.getFlag(ModuleName, "sceneScrollerTilerFlags").LinkedTiles.map(t => t.SceneUUID);
-        // Now, get all the tiles in the background and filter/map to those that have Scene Tiler flags with scene UUID's in them
+        // Now, get all the tiles in the background and map those that have Scene Tiler flags with scene UUID's in them
         const bgTileUuidArray = canvas.background.placeables.map(t => t.data.flags["scene-tiler"].scene);
-        // Now filter uuidArray to only include tiles in bgTileUuidArray
+        // Now filter uuidArray to only include tiles present in bgTileUuidArray
         const filteredUuidArray = uuidArray.filter(u => bgTileUuidArray.includes(u));
 
         // The vectors in the scene-scroller flags for linked tiles represents the magnitude in X and Y to the coordinates to the top left corner of the linked tile.
         // Using our main tile as a starting point, build an array of x, y coordinates for all the linked tiles currently present in the scene.
-        // Need the top left corner (TLC) as well as the top right corner and bottom left corner.
+        // Need the top left corner (TLC) as well as the top right corner and bottom left corner in the coordArrays.
         const coordArrayX = [tile.data.x, tile.data.x + tile.width];
         const coordArrayY = [tile.data.y, tile.data.y + tile.height];
         for (const linkedUuid of filteredUuidArray) {
@@ -278,7 +289,7 @@ export async function createTilerTile(source) {
     }
 
     // Transfer flags from compendium scene (source) and add them to myTile.
-    const isTransfer = transferCompendiumSceneFlags(source, myTile);
+    const isTransfer = await transferCompendiumSceneFlags(source, myTile);
     if ( !isTransfer) return false;
 
     // Update main scene flags with the array of created Scene Tiler tiles.
@@ -304,7 +315,54 @@ export async function createTilerTile(source) {
 
 export async function message_handler(request) {
     switch (request.action) {
-      case '????':
-        break;
+        case msgDict.preventCanvasDrawTrue:
+            SceneScroller.PreventCanvasDraw = true;
+            break;
+        case msgDict.preventCanvasDrawFalse:
+            SceneScroller.PreventCanvasDraw = false;
+            break;
+        case msgDict.refreshAfterResize: 
+            refreshSceneAfterResize(request.data);
+            break;
+        default:
+            log(false, "Did not find action in message_handler() function.")
+            log(false, "Requested action: " + request.action) 
     }
+}
+
+/** A dictionary of actions.  Avoids typos and is easier to reference when coding. */
+export const msgDict = {
+    preventCanvasDrawTrue: "preventCanvasDrawTrue",
+    preventCanvasDrawFalse: "preventCanvasDrawFalse",
+    refreshAfterResize: "refreshAfterResize"
+}
+
+/** A companion dictionary for socketWrapper() function.
+ *  The action string here should match the string in message_handler() function.
+ *  The selected function will execute for the GM client and then by the player clients via sockets.
+ */
+const socketDict = {
+    preventCanvasDrawTrue: () => {
+        SceneScroller.PreventCanvasDraw = true;
+        game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawTrue})
+    },
+    preventCanvasDrawFalse: () => {
+        SceneScroller.PreventCanvasDraw = false;
+        game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawFalse})
+    },
+    refreshAfterResize: (...args) => {
+        refreshSceneAfterResize(...args);
+        game.socket.emit(SocketModuleName, {action: msgDict.refreshAfterResize, data: args})
+    }
+}
+
+/** A wrapper function that will execute code on the GM client and then request the same code be executed by all clients.
+ *  
+ * @param {String}          requestID   - A string that will map to an object key to execute a function.
+ * @param {any}             data        - Data to be passed to the function as arguments.
+ * @return {void}
+ */
+export async function socketWrapper(requestID, data) {
+    const fn = socketDict[requestID];
+    fn(data);
 }
