@@ -1,11 +1,11 @@
 import { ModuleName } from "../ss-initialize.js";
-import { createTilerTile, log } from "./Functions.js";
+import { createTilerTile, log, socketWrapper, msgDict } from "./Functions.js";
 import { ScrollerSelectScene } from "./Forms.js";
 
 /**
- * Manipulates the scene in several ways to stitch smaller scenes together to emulate a much bigger scene
+ * Manipulates the scene in several ways to stitch smaller scenes together to simulate a much bigger scene
  * 
- * Defined as a class for future plans to generate maps like a maze or labyrinth by randomly choosing smaller scenes populated with tags.
+ * Defined as a class for future plans to generate maps like a maze or labyrinth by randomly choosing smaller scenes by filtering for tags.
  * The intent is to extend this class to override methods to achieve that.
  * 
  * This class is expected to manipulate the scene in several ways:
@@ -127,7 +127,7 @@ export class SceneScroller {
             return;
         }
 
-        log(true, "Tile [" + myTile.id + "] created in scene [" + canvas.scene.id + "].");
+        log(true, "Scene-Tiler tile [" + myTile.id + "] created in scene [" + canvas.scene.id + "].");
     }
 
     /** A method that will offset selected placeables by a vector.
@@ -150,7 +150,7 @@ export class SceneScroller {
      */
     static async offsetPlaceables(placeables, vector, save = false) {
         // To keep the visuals smooth, prevent a canvas.draw()
-        SceneScroller.PreventCanvasDraw = true;
+        socketWrapper(msgDict.preventCanvasDrawTrue);
 
         const updates = {
             drawings: [],
