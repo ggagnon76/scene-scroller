@@ -206,4 +206,20 @@ export class SceneScroller {
 
         if ( save ) await canvas.scene.update(updates);
     }
+
+    /** This function will interrupt the core token creation workflow to present a formapplication requesting the user
+     *  choose on what Scene-Tiler tile the token should be located.  Alternatively, can offer the option to create the token on 
+     *  the same tile as existing tokens.
+     *  This function will be triggered off a "preCreateToken" hook and must return false.  Upon completion of the formapplication
+     *  selection, the data will submit a new token creation which will include Scene Scroller flags
+     */
+    static tokenCreate() {
+        // Many checks before stopping the token creation workflow!
+        if ( !this.isScrollerScene(canvas.scene) ) return true;
+        
+        // Launch a formApplication here.
+        ui.notifications.error("Need to select scene tile for token.");
+        // Stop the token creation workflow.
+        return false;
+    }
 }

@@ -1,0 +1,27 @@
+<section class="tab sidebar-tab directory flexcol" id="token-create">
+    <ol class="directory-list">
+    {{#each packs as |pack label|}}
+        <li class="compendium-type">
+            <h3>{{label}}</h3>
+            <ol class="compendium-list">
+                {{#each pack.packs}}
+                <li class="compendium-pack directory-item" data-pack="{{this.collection}}" data-open="0">
+                    <h4 class="pack-title">
+                        <a><i class="folder fas fa-folder"></i> {{this.metadata.label}}</a>
+                        <div class="status-icons">
+                            {{#if this.private}}<i class="fas fa-eye-slash"></i>{{/if}}
+                            {{#if this.locked}}<i class="fas fa-lock"></i>{{/if}}
+                        </div>
+                    </h4>
+                    <footer class="compendium-footer">
+                        <span class="document-type">{{localize this.documentName}}</span>
+                        <span> ({{this.metadata.package}})</span>
+                    </footer>
+                </li>
+                {{/each}}
+            </ol>
+        </li>
+    {{/each}}
+    </ol>
+
+</section>

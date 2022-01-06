@@ -1,4 +1,4 @@
-import { hasDependencies, message_handler } from "./lib/Functions.js";
+import { message_handler } from "./lib/Functions.js";
 import { SceneScroller } from "./lib/SceneScroller.js";
 
 // Boolean to be used for any entry function that will launch Scene Scroller methods or functions.
@@ -10,15 +10,12 @@ export const ModuleName = "scene-scroller";
 // Convenience variable to insert the module title where required
 export const ModuleTitle = "Scene Scroller";
 
-const dependencies = ["scene-tiler", "lib-wrapper"];
-
 /** Hook once on 'READY' to initialize the following:
- *   - Check all dependencies are installed and activated.  Then set isReady to TRUE.
+ *   - All libWrapper wrappers
  *   - Initialize the socket
+ *   - Make the SceneScroller class available as an api.
  */
 Hooks.once('ready', () => {
-    if ( !hasDependencies(dependencies) ) return;
-    isReady = true;
 
     libWrapper.register(ModuleName, 'Scene.prototype._onUpdate', function (wrapped, ...args) {
         const [data, options, userId] = args;
@@ -44,3 +41,5 @@ Hooks.once('ready', () => {
 Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
     registerPackageDebugFlag(ModuleName);
 });
+
+Hooks.on('preCreateToken', (...args) => {return SceneScroller.tokenCreate()});

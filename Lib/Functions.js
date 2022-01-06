@@ -20,38 +20,6 @@ export function log(force, ...args) {
     } catch (e) {}
 }
 
-/** This function checks that all dependencies are installed and activated.
- *  If they are not, then an error will be displayed to the GM account(s)
- *  @param {Array}  args    - An array of module name strings that are dependencies
- *  @return {Boolean}
-*/
-export function hasDependencies(args) {
-    const notInstalled = [];
-    const notActivated = [];
-
-    for (const dependency of args) {
-        const status = game.modules.get(dependency)?.active;
-        if ( status ) continue;
-        if ( status === undefined ) notInstalled.push(dependency);s
-        if ( status === false) notActivated.push(dependency);
-    }
-
-    for (const warning of notInstalled) {
-        if (!game.user.isGM) continue
-        ui.notifications.error(ModuleTitle + " | The " + warning + " module is not installed.  " + ModuleTitle + " execution aborted.");
-    }
-
-    for (const warning of notActivated) {
-        if (!game.user.isGM) continue
-        ui.notifications.error(ModuleTitle + " | The " + warning + " module is not activated.  " + ModuleTitle + " execution aborted.");
-    }
-
-    if (notInstalled.length || notActivated.length) return false;
-
-    if (game.user.isGM) ui.notifications.info(ModuleTitle + " | All module dependencies are installed and activated!");
-    return true;
-}
-
 /** Returns a compendium scene document when given a pack name and scene name
  * @param {string}  pack    - The name of the compendium pack
  * @param {string}  scene   - The name of the scene in the above compendium pack
