@@ -1,5 +1,5 @@
 import { ModuleName } from "../ss-initialize.js";
-import { deleteTilerTile, getSource, log, resizeScene, transferCompendiumSceneFlags } from "./Functions.js";
+import { createTilerTile, log } from "./Functions.js";
 import { ScrollerSelectScene } from "./Forms.js";
 
 /**
@@ -34,11 +34,11 @@ export class SceneScroller {
     }
 
     /**
-     * A schema of the flag data stored in each Scene Tiler tile.
+     * A schema of the flag data stored in each compendium Scene, which gets transfered to each Scene Tiler tile.
      * @memberof SceneScroller
      */
     static sceneScrollerTilerFlags = {
-        LinkedTiles: [], // An array of tileLinks objects
+        LinkedTiles: [], // An array of sceneScrollerTileLinks objects
     }
 
     static SceneScrollerTokenFlags = {
@@ -46,6 +46,12 @@ export class SceneScroller {
         Vector: {},  // ex: {x: 0, y: 0} An object with x & y coordinates in pixels, relative to the top left corner of CurrentTile
         ActiveTilerTileIDs: [], // A subset of the SceneTilerTileIDsArray from Scene Flags that represents tiles the token can see with vision.
     }
+
+    /** A variable to identify when to supress canvas#draw()
+     *  Used in libwrapper
+     *  @param {Boolean}
+     */
+    static PreventCanvasDraw = false;
 
     /**
      * A Method to identify if a scene is being used as a Scene Scroller Scene.
@@ -82,85 +88,122 @@ export class SceneScroller {
             return;
         }
 
-        const d = canvas.dimensions;
-
-        // The scene tiler module will create a tile out of the selected compendium scene, centering it in our scene.
-        const myTile = await SceneTiler.create(source, {x: d.sceneWidth/2, y: d.sceneHeight/2, populate: true, centered: true});
-        if ( !myTile) {
-            log(false, "Scene Scroller scene initialization failed because Scene Tiler failed to create a tile.")
+        // Import the compendium scene as a tile
+        const myTile = await createTilerTile(source);
+        if ( !myTile ) {
+            log(false, "Scene Scroller initialization failed.  Source object passed to createTilerTile():")
+            log(false, source);
+            ui.notifications.error("Scene Scroller scene initialization failed.")
             return;
         }
 
-        // Transfer flags from compendium scene (source) and add them to myTile.
-        const isTransfer = transferCompendiumSceneFlags(source, myTile);
-        if ( !isTransfer) return;
-
-        // Prepare the flag data for the scene
-        const sceneFlagData = JSON.parse(JSON.stringify(this.sceneScrollerSceneFlags));
-        sceneFlagData.SceneTilerTileIDsArray.push(myTile.id);
-
-        // Resize the scene so that it fits around the new tile with 1 grid square of padding
-        const isResize = resizeScene(canvas.scene, sceneFlagData.SceneTilerTileIDsArray);
-        if (!isResize) {
-            ui.notifications.error("Scene failed to resize to fit Scene-Tiler tile.");
-            log(false, "Scene Scroller scene initialization failed because the resizeScene function failed.");
-            deleteTilerTile(myTile);
-            return;
-        }
-
-        // Save flags to the scene.
-        canvas.scene.setFlag(ModuleName, "sceneFlags", sceneFlagData);
-
+        log(true, "Scene [" + canvas.scene.id + "] initialized as a Scene Scroller scene.")
     }
 
     /**
      * This method should be invoked by a trigger (button, condition, etc...) to spawn a new tile that a
      * token will soon be able to see with token vision.  The trigger can originate from a user and will
      * have to be passed to the GM via socket to execute.
-     * @param {String}      tileUUID      - a UUID pointing to a scene in a compendium.
+     * @param {String}      sceneUUID      - a UUID identifying a scene in a compendium.
      * @return {void}
      */
-    static async spawnLinkedTile(tileUUID) {
+    static async spawnLinkedTile(sceneUUID) {
         // Just in case...
         if (!game.user.isGM) return;
 
-        const source = await fromUuid(tileUUID);
+        const source = await fromUuid(sceneUUID);
         if (source === null) {
             log(false, "Linked scene could not be found via the UUID.");
-            log(false, tileUUID);
+            log(false, sceneUUID);
             return;
         }
 
-        const d = canvas.dimensions;
-
-        // The scene tiler module will create a tile out of the selected compendium scene, centering it in our scene.
-        const myTile = await SceneTiler.create(source, {x: d.sceneWidth/2, y: d.sceneHeight/2, populate: true, centered: true});
-        if ( !myTile) {
-            log(false, "Linked scene spawn failed because Scene Tiler failed to create a tile.")
+        // Import the compendium scene as a tile
+        const myTile = createTilerTile(source);
+        if ( !myTile ) {
+            log(false, "Spawning linked tile failed.  Source object passed to createTilerTile():");
+            log(false, source);
+            ui.notifications.error("Spawning linked compendium scene failed.")
             return;
         }
 
-        // Transfer flags from compendium scene (source) and add them to myTile.
-        const isTransfer = transferCompendiumSceneFlags(source, myTile);
-        if ( !isTransfer) return;
-
-        // Prepare the flag data for the scene
-        const sceneFlagData = JSON.parse(JSON.stringify(canvas.scene.getFlag(ModuleName, "sceneFlags")));
-        sceneFlagData.SceneTilerTileIDsArray.push(myTile.id);
-
-        // Resize the scene so that it fits around the new tile with 1 grid square of padding
-        const isResize = resizeScene(canvas.scene, sceneFlagData.SceneTilerTileIDsArray);
-        if (!isResize) {
-            ui.notifications.error("Scene failed to resize to fit Scene-Tiler tile.");
-            log(false, "Scene Scroller scene initialization failed because the resizeScene function failed.");
-            deleteTilerTile(myTile);
-            return;
-        }
-
-        // Save flags to the scene.
-        canvas.scene.setFlag(ModuleName, "sceneFlags", sceneFlagData);
-
+        log(true, "Tile [" + myTile.id + "] created in scene [" + canvas.scene.id + "].");
     }
 
+    /** A method that will offset selected placeables by a vector.
+     *  Libwrapper will wrap Scene.prototype._onUpdate to prevent a canvas.draw() when this method is initiated.
+     *  The placeables will be moved manually per client to ensure there is no visual disruption.
+     *  In some instances, placeables will be moved per client and NOT saved.
+     *  In other instances, the placeables will be moved and saved for all clients.
+     * 
+     * @param {Object}          placeables      -  {drawings: [],
+     *                                              lights: [],
+     *                                              notes: [],
+     *                                              sounds: [],
+     *                                              templates: [],
+     *                                              tiles: [],
+     *                                              tokens: [],
+     *                                              walls: []
+     *                                             }
+     * @param {Object}          vector          -  {x: Number, y: Number}
+     * @param {Boolean}         save            - (Optional), Default, false.  If true, will save translation to database.
+     */
+    static async offsetPlaceables(placeables, vector, save = false) {
+        // To keep the visuals smooth, prevent a canvas.draw()
+        SceneScroller.PreventCanvasDraw = true;
 
+        const updates = {
+            drawings: [],
+            lights: [],
+            notes: [],
+            sounds: [],
+            templates: [],
+            tiles: [],
+            tokens: [],
+            walls: []
+        };
+
+        for (const placeableKey in placeables) {
+            switch(placeableKey) {
+                case "walls":
+                    for (const placeable of placeables[placeableKey]) {
+                        placeable.data.c[0] += vector.x;
+                        placeable.data.c[2] += vector.x;
+                        placeable.data.c[1] += vector.y;
+                        placeable.data.c[3] += vector.y;
+                        updates[placeableKey].push({_id: placeable.id, c: [
+                            placeable.data.c[0],
+                            placeable.data.c[1],
+                            placeable.data.c[2],
+                            placeable.data.c[3]
+                        ]});
+                    }
+                    break;
+                case "tiles":
+                    for (const placeable of placeables[placeableKey]) {
+                        placeable.position.set(
+                            placeable.data.x + vector.x,
+                            placeable.data.y + vector.y
+                        );
+                        updates[placeableKey].push({_id: placeable.id, x: placeable.data.x, y: placeable.data.y});
+                    }
+                default:
+                    for (const placeable of placeables[placeableKey]) {
+                        placeable.data.x += vector.x;
+                        placeable.data.y += vector.y;
+                        updates[placeableKey].push({_id: placeable.id, x: placeable.data.x, y: placeable.data.y});
+                    }
+            }
+        }
+
+        // Reposition all door icons
+        const doorIcons = canvas.walls.placeables.filter(w => w.doorControl !== undefined);
+
+        for (let door of doorIcons) {
+        const dcPos = door.doorControl.position;
+        door.doorControl.position.set(dcPos.x + vector.x, dcPos.y + vector.y);
+        }
+
+        if ( save ) await canvas.scene.update(updates);
+    }
 }
