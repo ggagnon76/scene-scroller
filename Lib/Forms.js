@@ -72,12 +72,12 @@ export class ScrollerSelectScene extends FormApplication {
     }
   }
 
-  export class TokenCreationSelect extends SidebarTab {  // Ref: CompendiumDirectory class in foundry.js
+  export class NewTokenTileSelectUI extends SidebarTab { 
 
     /** @override */
       static get defaultOptions() {
         return foundry.utils.mergeObject(super.defaultOptions, {
-          id: "token_creation_select",
+          id: "new_token_tile_select_ui",
         template: "./templates/token-creation.html",
         title: "This is what?"
       });

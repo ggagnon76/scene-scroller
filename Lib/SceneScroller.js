@@ -1,6 +1,6 @@
 import { ModuleName } from "../ss-initialize.js";
 import { createTilerTile, log, socketWrapper, msgDict } from "./Functions.js";
-import { ScrollerSelectScene } from "./Forms.js";
+import { NewTokenTileSelectUI } from "./Forms.js";
 
 /**
  * Manipulates the scene in several ways to stitch smaller scenes together to simulate a much bigger scene
