@@ -72,32 +72,21 @@ export class ScrollerSelectScene extends FormApplication {
     }
   }
 
-<<<<<<< HEAD
-  export class TokenCreationSelect extends SidebarTab {  // Ref: CompendiumDirectory class in foundry.js
+  export class NewTokenTileSelectUI extends SidebarTab {   // Ref: CompendiumDirectory class in foundry.js
      constructor(data){
        super(data);
        this._dragDrop[0].permissions["dragstart"] = () => game.user.can("TOKEN_CREATE");
        this.draggedActor = data.actorId;
      } 
-=======
-  export class NewTokenTileSelectUI extends SidebarTab { 
->>>>>>> cfbf9a182f49b0ceaf8a5bcfe21cf4cd0d359d9a
-
+  
     /** @override */
       static get defaultOptions() {
         return foundry.utils.mergeObject(super.defaultOptions, {
-<<<<<<< HEAD
-          id: "token_create_select",
+          id: "new_token_tile_select_ui",
           template: "./modules/scene-scroller/templates/token-create.hbs",
           title: "SCENE SCROLLER: Select Scene",
           dragDrop: [{ dragSelector: ".directory-item"}],
         });
-=======
-          id: "new_token_tile_select_ui",
-        template: "./templates/token-creation.html",
-        title: "This is what?"
-      });
->>>>>>> cfbf9a182f49b0ceaf8a5bcfe21cf4cd0d359d9a
     }
   
       /* -------------------------------------------- */
