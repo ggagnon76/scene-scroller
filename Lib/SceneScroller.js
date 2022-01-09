@@ -1,7 +1,8 @@
 import { ModuleName } from "../ss-initialize.js";
 import { createTilerTile, log } from "./Functions.js";
-import { ScrollerSelectScene, TokenCreationSelect } from "./Forms.js";
+import { ScrollerSelectScene, NewTokenTileSelectUI } from "./Forms.js";
 import { socketWrapper, msgDict } from "./Socket.js";
+import { createTilerTile, log, socketWrapper, msgDict } from "./Functions.js";
 
 /**
  * Manipulates the scene in several ways to stitch smaller scenes together to simulate a much bigger scene
@@ -227,7 +228,7 @@ export class SceneScroller {
         }
         
         // Launch a formApplication here.
-        new TokenCreationSelect(data).renderPopout();
+        new NewTokenTileSelectUI(data).renderPopout();
         return false;
     }
 }
