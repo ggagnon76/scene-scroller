@@ -1,4 +1,4 @@
-import { message_handler } from "./lib/Functions.js";
+import { message_handler, socketWrapper, msgDict } from "./lib/Socket.js";
 import { SceneScroller } from "./lib/SceneScroller.js";
 
 // Boolean to be used for any entry function that will launch Scene Scroller methods or functions.
@@ -31,6 +31,8 @@ Hooks.once('ready', () => {
         delete data?.walls;
         delete data?.height;
         delete data?.width;
+
+        socketWrapper(msgDict.preventCanvasDrawFalse)
         return wrapped(data, options, userId);
       })
 
@@ -44,4 +46,4 @@ Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
     registerPackageDebugFlag(ModuleName);
 });
 
-Hooks.on('preCreateToken', (...args) => {return SceneScroller.tokenCreate()});
+Hooks.on('preCreateToken', (...args) => {return SceneScroller.tokenCreate(...args)});

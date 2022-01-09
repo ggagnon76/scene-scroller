@@ -1,5 +1,6 @@
-import { ModuleName, ModuleTitle, SocketModuleName } from "../ss-initialize.js";
+import { ModuleName, ModuleTitle } from "../ss-initialize.js";
 import { SceneScroller } from "./SceneScroller.js";
+import { msgDict, socketWrapper } from "./Socket.js";
 
 /** A wrapper function that works with the Foundryvtt-devMode module to output debugging info
  *  to the console.log, when a debugging boolean is activated in module settings.
@@ -53,7 +54,7 @@ export async function deleteTilerTile(tile) {
  *  @param {Object}         size        - the new scene size, format: {width: <Number>, height: <Number>}
  *  @return {void}
  */
-function refreshSceneAfterResize(size) {
+export function refreshSceneAfterResize(size) {
 
     const d = canvas.dimensions;
 
@@ -62,7 +63,7 @@ function refreshSceneAfterResize(size) {
         height: size.height + 2 * d.size,
         size: d.size,
         gridDistance: d.distance,
-        padding: padding,
+        padding: canvas.scene.data.padding,
         shiftX: d.shiftX,
         shiftY: d.shiftY,
         grid: canvas.scene.data.grid
@@ -70,6 +71,18 @@ function refreshSceneAfterResize(size) {
     canvas.stage.hitArea = new PIXI.Rectangle(0, 0, canvas.dimensions.width, canvas.dimensions.height);
     canvas.msk.clear().beginFill(0xFFFFFF, 1.0).drawShape(canvas.dimensions.rect).endFill();
     canvas.background.drawOutline(canvas.outline);
+}
+
+/** This function pans the scene by the same amount as the input vector
+ *  It is a separate function because it will have to be called by the clients.
+ *  @param {Object}         vector          - of the form {x: <Number>, y: <Number>}
+ *  @return {void}
+ */
+export async function vectorPan(vector) {
+    await canvas.pan( {
+        x: canvas.stage.pivot.x + vector.x,
+        y: canvas.stage.pivot.y + vector.y
+    } )
 }
 
 /** A function that will resize the scene, and translate all placeables back to a determined coordinate.
@@ -89,7 +102,6 @@ async function resizeScene(size) {
 
     // Will need to know the size of the padding pre-update, to move all placeables post-update.
     const prePadding = {x: d.paddingX, y: d.paddingY};
-    const padding = canvas.scene.data.padding;
 
     // This update should not trigger a canvas.draw()
     socketWrapper("preventCanvasDrawTrue");
@@ -112,10 +124,8 @@ async function resizeScene(size) {
 
     if (vector.x === 0 && vector.y === 0) return;
 
-    await canvas.pan( {
-        x: canvas.stage.pivot.x + vector.x,
-        y: canvas.stage.pivot.y + vector.y
-    } )
+    // Pan the view to make it look like the scene background moves, not the content.
+    socketWrapper(msgDict.vectorPanScene, vector);
 
     const placeables = {
         drawings: canvas.drawings.placeables,
@@ -128,8 +138,8 @@ async function resizeScene(size) {
         walls: canvas.walls.placeables
     };
 
-    // Move all the placeables and save
-    await SceneScroller.offsetPlaceables(placeables, vector, true);
+    // Move all the placeables and save for all clients.
+    socketWrapper(msgDict.translatePlaceables, {placeables: placeables, vector: vector, save: true});
 }
 
 /**
@@ -281,56 +291,3 @@ export async function createTilerTile(source) {
     return myTile;
 }
 
-export async function message_handler(request) {
-    switch (request.action) {
-        case msgDict.preventCanvasDrawTrue:
-            SceneScroller.PreventCanvasDraw = true;
-            break;
-        case msgDict.preventCanvasDrawFalse:
-            SceneScroller.PreventCanvasDraw = false;
-            break;
-        case msgDict.refreshAfterResize: 
-            refreshSceneAfterResize(request.data);
-            break;
-        default:
-            log(false, "Did not find action in message_handler() function.")
-            log(false, "Requested action: " + request.action) 
-    }
-}
-
-/** A dictionary of actions.  Avoids typos and is easier to reference when coding. */
-export const msgDict = {
-    preventCanvasDrawTrue: "preventCanvasDrawTrue",
-    preventCanvasDrawFalse: "preventCanvasDrawFalse",
-    refreshAfterResize: "refreshAfterResize"
-}
-
-/** A companion dictionary for socketWrapper() function.
- *  The action string here should match the string in message_handler() function.
- *  The selected function will execute for the GM client and then by the player clients via sockets.
- */
-const socketDict = {
-    preventCanvasDrawTrue: () => {
-        SceneScroller.PreventCanvasDraw = true;
-        game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawTrue})
-    },
-    preventCanvasDrawFalse: () => {
-        SceneScroller.PreventCanvasDraw = false;
-        game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawFalse})
-    },
-    refreshAfterResize: (...args) => {
-        refreshSceneAfterResize(...args);
-        game.socket.emit(SocketModuleName, {action: msgDict.refreshAfterResize, data: args})
-    }
-}
-
-/** A wrapper function that will execute code on the GM client and then request the same code be executed by all clients.
- *  
- * @param {String}          requestID   - A string that will map to an object key to execute a function.
- * @param {any}             data        - Data to be passed to the function as arguments.
- * @return {void}
- */
-export async function socketWrapper(requestID, data) {
-    const fn = socketDict[requestID];
-    fn(data);
-}
