@@ -18,7 +18,7 @@ export async function message_handler(request) {
             break;
         case msgDict.translatePlaceables:
             const [placeables, vector, save] = request.data;
-            SceneScroller.offsetPlaceables(placeables, vector, save);
+            await SceneScroller.offsetPlaceables(placeables, vector, save);
             break;
         default:
             log(false, "Did not find action in message_handler() function.")
@@ -55,10 +55,10 @@ const socketDict = {
         utils.vectorPan(data);
         game.socket.emit(SocketModuleName, {action: msgDict.vectorPanScene, data: data})
     },
-    [msgDict.translatePlaceables]: (data) => {
+    [msgDict.translatePlaceables]: async (data) => {
         const {placeables, vector, save} = data;
-        SceneScroller.offsetPlaceables(placeables, vector, save);
-        game.socket.emit(SocketModuleName, {action: msgDict.translatePlaceables, data: data})
+        await SceneScroller.offsetPlaceables(placeables, vector, save);
+        //game.socket.emit(SocketModuleName, {action: msgDict.translatePlaceables, data: data})
     }
 
 }

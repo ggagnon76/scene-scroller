@@ -1,8 +1,7 @@
 import { ModuleName } from "../ss-initialize.js";
-import { createTilerTile, log } from "./Functions.js";
 import { ScrollerSelectScene, NewTokenTileSelectUI } from "./Forms.js";
 import { socketWrapper, msgDict } from "./Socket.js";
-import { createTilerTile, log, socketWrapper, msgDict } from "./Functions.js";
+import { createTilerTile, log } from "./Functions.js";
 
 /**
  * Manipulates the scene in several ways to stitch smaller scenes together to simulate a much bigger scene
@@ -223,12 +222,15 @@ export class SceneScroller {
         if ( !this.isScrollerScene(canvas.scene) ) return true;
         if ( doc.data.flags.hasOwnProperty("SceneScrollerTokenFlags") ) {
             const actor = game.actors.get(data.actorId);
+            if ( !data.actorLink ) {
+                doc.data.actorData.flags = data.flags
+            }
             actor.data.token.update({"flags.-=SceneScrollerTokenFlags" : null});  // not awaited.  Can't anyway because it's called in a hook.
             return true;
         }
         
         // Launch a formApplication here.
-        new NewTokenTileSelectUI(data).renderPopout();
+        new NewTokenTileSelectUI(data).render(true);
         return false;
     }
 }

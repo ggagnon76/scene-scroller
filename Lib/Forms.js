@@ -72,9 +72,11 @@ export class ScrollerSelectScene extends FormApplication {
     }
   }
 
-  export class NewTokenTileSelectUI extends SidebarTab {   // Ref: CompendiumDirectory class in foundry.js
+  /* -------------------------------------------------------------------------------------------*/
+
+  export class NewTokenTileSelectUI extends Application { 
      constructor(data){
-       super(data);
+       super();
        this._dragDrop[0].permissions["dragstart"] = () => game.user.can("TOKEN_CREATE");
        this.draggedActor = data.actorId;
      } 
@@ -82,14 +84,14 @@ export class ScrollerSelectScene extends FormApplication {
     /** @override */
       static get defaultOptions() {
         return foundry.utils.mergeObject(super.defaultOptions, {
+          width: 300,
+          height: "auto",
           id: "new_token_tile_select_ui",
           template: "./modules/scene-scroller/templates/token-create.hbs",
-          title: "SCENE SCROLLER: Select Scene",
-          dragDrop: [{ dragSelector: ".directory-item"}],
+          title: game.i18n.localize('SceneScroller.NewTokenTileSelectUI.Title'),
+          dragDrop: [{ dragSelector: ".ss-scene-list"}, { dragSelector: ".ss-actor-list"}]
         });
     }
-  
-      /* -------------------------------------------- */
   
     /** @override */
     async getData() {
@@ -112,46 +114,32 @@ export class ScrollerSelectScene extends FormApplication {
 
       // This section gets all the actors with tokens currently in the main scene
       // Get an array of all tokens that are linked to actors
-      const linkedTokens = canvas.tokens.placeables.filter(t => t.data.actorLink === true);
-      // Filter linkedTokens to find only those that have SceneScrollerTokenFlags in their flags.
-      linkedTokens.filter(t => t.data.flags.hasOwnProperty("SceneScrollerTokenFlags"));
-      // Get an array of unlinked actor documents.
-      const unlinkedTokens = Array.from(game.actors.tokens);
-      // Filter unlinkedTokens to find only those that have SceneScrollerTokenFlags in their flags.
-      unlinkedTokens.filter(t => t.data.flags.hasOwnProperty("SceneScrollerTokenFlags"));
-
-      const allTokens = [...linkedTokens, ...unlinkedTokens];
+      const allTokens = canvas.tokens.placeables;
+      // Filter allTokens to find only those that have SceneScrollerTokenFlags in their flags.
+      allTokens.filter(t => t.data.flags.hasOwnProperty("SceneScrollerTokenFlags"));
       // Map the allTokens array to create an array of objects containing actor documents and destination tile IDs.
 
       const allActors = allTokens.map(t => {
         const actor = game.actors.get(t.data.actorId);
-        const destination = t.data.flags.SceneScrollerTokenFlags.CurrentTile; 
+        const destination = t.data.flags.SceneScrollerTokenFlags.CurrentTile ||
+                            t.data; 
         return {actor: actor, tileId: destination};
       });
 
       // Return data to the sidebar
       return {
+        generalNote: game.i18n.localize('SceneScroller.NewTokenTileSelectUI.Instructions.General'),
+        scenesNote: game.i18n.localize('SceneScroller.NewTokenTileSelectUI.Instructions.Scenes'),
+        tokensNote: game.i18n.localize('SceneScroller.NewTokenTileSelectUI.Instructions.Tokens'),
+        optionOr: game.i18n.localize('SceneScroller.OptionOr'),
+        optionEither: game.i18n.localize('SceneScroller.OptionEither'),
         actor: this.draggedActor,
         sceneArray: compendiumScenes,
         actorArray: allActors
       }
     }
-
-    /** @override */
-    createPopout() {
-      const pop = super.createPopout();
-      pop.draggedActor = this.draggedActor
-      return pop;
-    }
   
     /* -------------------------------------------- */
-
-     /**
-   * Activate event listeners triggered
-   */
-	activateListeners(html) {
-	  super.activateListeners(html);
-  }
 
     /** @override */
   _onDragStart(event) {
@@ -165,7 +153,8 @@ export class ScrollerSelectScene extends FormApplication {
       }})
     })
 
-    const li = event.currentTarget.closest(".directory-item");
+    const li =  event.currentTarget.closest(".ss-scene-list") ||
+                event.currentTarget.closest(".ss-actor-list");
     let actor = null;
     if ( this.draggedActor ) {
       actor = game.actors.get(this.draggedActor);

@@ -1,0 +1,94 @@
+.ss-app {
+    margin: 0;
+    color: var(--color-text-light-highlight);
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    box-shadow: 0 0 20px var(--color-shadow-dark);
+    padding: 0;
+    min-height: 33vh;
+    max-height: 90vh;
+}
+
+.ss-scene-list {
+    position: relative;
+    height: var(--sidebar-scene-height);
+    line-height: var(--sidebar-scene-height);
+    background-size: 130% auto;
+    background-position: 50% 50%;
+    border: 2px solid var(--color-border-dark-1);
+    box-shadow: 0 0 20px var(--color-shadow-dark) inset;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+}
+
+.ss-scene-list h2 {
+    margin: 0;
+    line-height: calc(var(--sidebar-scene-height) - 10px);
+    text-align: center;
+    font-size: 1.5em;
+    font-weight: normal;
+    text-shadow: 1px 1px 3px var(--color-shadow-dark);
+}
+
+.ss-actor-list {
+    display: flex;
+    border-top: 1px solid var(--color-border-dark);
+    border-bottom: 1px solid var(--color-border-dark-3);
+    line-height: var(--sidebar-item-height);
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+}
+
+.ss-actor-list h4 {
+    margin: 0 0 0 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    flex: 1;
+    padding: 0;
+    font-weight: normal;
+}
+
+.ss-actor-list .ss-thumbnail {
+    flex: 0 0 var(--sidebar-item-height);
+    height: var(--sidebar-item-height);
+    width: var(--sidebar-item-height);
+    object-fit: cover;
+    object-position: 50% 0;
+    border: none;
+}
+
+#new_token_tile_select_ui .window-content{
+    background: url(/ui/denim075.png) repeat;
+    padding: 0px;
+}
+
+#token-create ol {
+    flex: 1;
+    list-style: none;
+    margin: 0 5px;
+    padding: 0;
+    overflow-y: auto;
+}
+
+#token-create ol h4 {
+    margin: 0 10px;
+    text-align: justify;
+    font-weight: normal;
+    background: rbga(255, 255, 255, 0.1);
+}
+
+#token-create ol h2 {
+    padding: 3px;
+    text-align: center;
+    border-bottom: none;
+    background: rbga(255, 255, 255, 0.1);
+}
+
+#token-create ol h3 {
+    background: rbga(255, 255, 255, 0.1);
+}
+

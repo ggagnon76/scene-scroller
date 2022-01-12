@@ -1,11 +1,13 @@
 {
     "SceneScroller": {
+        "OptionOr": "OR CHOOSE",
+        "OptionEither": "EITHER CHOOSE",
         "NewTokenTileSelectUI": {
-            "Title": "SCENE SCROLLER: Select Tile",  
+            "Title": "SCENE SCROLLER: Select sub-Scene",  
             "Instructions": {
                 "General": "Drag from the selections below to continue token creation workflow.  When you start dragging, the main scene will resolve to show the chosen sub-scene.",
-                "Scenes": "Either select from these scenes:",
-                "Tokens": "OR select a token to select the sub-scene they currently occupy:"
+                "Scenes": "1) Directly from these sub-scenes:",
+                "Tokens": "2) A token below to indirectly select the sub-scene they currently occupy:"
             }
         }
     }

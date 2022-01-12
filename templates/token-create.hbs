@@ -1,22 +1,26 @@
-<section class="tab sidebar-tab directory flexcol" id="token-create">
-    <ol class="directory-list">
+<section class="ss-app" id="token-create">
+    <ol>
+        <h4>{{generalNote}}</h4>
+        <h2>{{optionEither}}</h2>
+        <h3>{{scenesNote}}</h3>
         {{#each sceneArray}}
-            <li class="directory-item document scene flexrow" data-document-id="{{this.tileId}}" draggable="true"
+            <li class="ss-scene-list" data-document-id="{{this.tileId}}" draggable="true"
                 {{#if this.compendiumScene.thumbnail}}
                     style="background-image: url({{this.compendiumScene.thumbnail}}); background-position: left"
                 {{/if}}
             >
-                <h2 class="document-name"><center><a>{{this.compendiumScene.name}}</a></center></h2>
+                <h2>{{this.compendiumScene.name}}</h2>
             </li>
         {{/each}}
+        <h2>{{optionOr}}</h2>
+        <h3>{{tokensNote}}</h3>
         {{#each actorArray}}
-            <li class="directory-item document actor flexrow" data-document-id="{{this.tileId}}" draggable="true">
+            <li class="ss-actor-list" data-document-id="{{this.tileId}}" draggable="true">
                 {{#if this.actor.thumbnail}}
-                    <img class="thumbnail" title="{{this.actor.name}}" src="{{this.actor.thumbnail}}"/>
+                    <img class="ss-thumbnail" title="{{this.actor.name}}" src="{{this.actor.thumbnail}}"/>
                 {{/if}}
-                <h4 class="document-name"><a>{{this.actor.name}}</a></h4>
+                <h4>{{this.actor.name}}</h4>
             </li>
         {{/each}}
 	</ol>
-
 </section>
