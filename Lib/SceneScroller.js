@@ -233,4 +233,79 @@ export class SceneScroller {
         new NewTokenTileSelectUI(data).render(true);
         return false;
     }
+
+    /** This function will activate (make visible) the Scene-Tiler tile entered as a parameter.
+     *  All adjacent (linked) Scene-Tiler tiles that are already in the scene will also be activated.
+     *  All activated Scene-Tiler tiles will be sorted and placed in the main scene window in the correct position relative to each other.
+     *  All the placeable objects belonging to each activated Scene-Tiler tile will be activated and positioned in the main scene.
+     *  Tokens that are associated with the activated Scene-Tiler tiles will be activated (visible) and be moved (locally) to their correct
+     *    position relative to their associated Scene-Tiler tile.
+     * 
+     *  @param {String}         tilerTile       - The tile ID for the 'main' Scene-Tiler tile.
+     *  @return {Boolean}                       - Return true on success.  Return false if the function fails.
+     */
+    static displaySubScenes(tilerTile) {
+        // This is the main Scene Tiler tile:
+        const mainTile = canvas.background.get(tilerTile);
+        // Get all the linked tiles by the array of ID's saved in main tile flags.  This is an array of UUID's
+        const linkedTileUuidArr = mainTile.getFlag('scene-tiler-maker', 'sceneScrollerTilerFlags')
+                                            .LinkedTiles.map(l => l.SceneUUID);
+        // Get all the Scene-Tiler tiles in the scene from scene Flags.  This is an array of tile ID's
+        const tilerTilesArr = canvas.scene.getFlag(ModuleName, "sceneScrollerSceneFlags").SceneTilerTileIDsArray;
+
+        // Build two arrays of objects, one for X, one for Y.  Each object will contain coordinates and the associated linked tile.
+        // The X array will contain the left side of each tile, as placed by the mainTile vectors for each respective linked tile.  Use mainTile left side as a starting point.
+        // The Y array will contain the top side of each tile, as placed by the maintile vectors for each respective linked tile.  Use maintile top side as a starting point.
+        const activeTilesArrX = [{
+            left: mainTile.data.x,
+            tile: mainTile
+        }];
+        const activeTilesArrY = [{
+            top: mainTile.data.y,
+            tile: mainTile
+        }];
+        for (const tileId of tilerTilesArr) {
+            // Get the tile documentn for this tileId
+            const tile = canvas.background.get(tileId);
+            // Get the UUID for this tileId
+            const Uuid = tile.getFlag("scene-tiler", "scene");
+            if ( !linkedTileUuidArr.includes(Uuid) ) continue;
+            // Get the vector associated with this linked tile
+            const vector = mainTile.getFlag("scene-scroller-maker", 'sceneScrollerTilerFlags')
+                                    .LinkedTiles.filter(id => id.SceneUUID === Uuid)[0]
+                                    .Vector;
+            // Push the coordinates to the corresponding arrays
+            activeTilesArrX.push({
+                left: mainTile.data.x + vector.x,
+                tile: tile
+            })
+            activeTilesArrY.push({
+                top: mainTile.data.y + vector.y,
+                tile: tile
+            })
+        }
+
+        // With those two arrays, sort for X and then Y to establish final coordinates for each tile.  Filter (reduce) so tile is unique.
+        // For example, using the X array:  The smallest coordinate will be the left most tile and will be placed at x-dir grid 1.
+        // The next smallest tile will be the second left most tile and will be placed relative to the left most tile, by the vector distance for x.
+        // And so on until all tiles have an X coordinate.
+        const sortX = activeTilesArrX.sort((a,b) => (a.left > b.left) ? 1 : ((b.left > a.left) ? -1 : 0))
+                        .reduce((a,d) => {
+                            if (!a.includes(d[tile])) a.push(d);
+                            return a;
+                        });
+        const sortY = activeTilesArrY.sort((a,b) => (a.top > b.top) ? 1 : ((b.top > a.top) ? -1 : 0))
+                        .reduce((a,d) => {
+                            if (!a.includes(d[tile])) a.push(d);
+                            return a;
+                        });
+        
+        // Using the above X and Y arrays, generate an array of vectors to the required x and y coordinates for each tile from their current position.
+        debugger;
+        // Use the vector array to locally place each activated tile in their respective positions in the main scene and make the tiles visible.  NOTE:  Their positions are not saved!!
+
+        // For each tile, move all the placeable objects associated with the tiles (see Scene-Tiler flags) and move those by the same vector used to move the respective tiles.
+
+        // For each token associated with any particular active tile, move the token to the position (relative to tile TLC) saved in the token flags.
+    }
 }
