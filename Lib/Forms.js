@@ -27,7 +27,7 @@ export class ScrollerSelectScene extends FormApplication {
         width: 400,
         template: `./modules/${ModuleName}/templates/initialize.hbs`,
         id: "scene-scroller-selection-form",
-        title: "Scene Scroller scene selection",
+        title: game.i18n.localize('SceneScroller.SelectSceneUI.Title'),
         submitOnChange: true,
         closeOnSubmit: false
       })
@@ -46,6 +46,9 @@ export class ScrollerSelectScene extends FormApplication {
   
       // Send list of scene compendiums to the template
       return {
+        compSelectText: game.i18n.localize('SceneScroller.SelectSceneUI.Instructions.SelectCompendium'),
+        defaultSelect: game.i18n.localize('SceneScroller.SelectSceneUI.SelectDefault'),
+        sceneSelectText: game.i18n.localize('SceneScroller.SelectSceneUI.Instructions.SelectScene'),
         compendiumList: this.compendiumList,
         compendium: this.compendiumChoice,
         sceneList: this.sceneList

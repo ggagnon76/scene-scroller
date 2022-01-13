@@ -9,6 +9,14 @@
                 "Scenes": "1) Directly from these sub-scenes:",
                 "Tokens": "2) A token below to indirectly select the sub-scene they currently occupy:"
             }
+        },
+        "SelectSceneUI" : {
+            "Title" : "SCENE SCROLLER: Select Seed Scene",
+            "SelectDefault" : "Nothing Selected.",
+            "Instructions" : {
+                "SelectCompendium": "Select Compendium:",
+                "SelectScene": "Select Scene:"
+            }
         }
     }
 }

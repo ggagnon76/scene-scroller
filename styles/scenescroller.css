@@ -7,11 +7,12 @@
     justify-content: flex-start;
     box-shadow: 0 0 20px var(--color-shadow-dark);
     padding: 0;
-    min-height: 33vh;
+    min-height: 10vh;
     max-height: 90vh;
 }
 
 .ss-scene-list {
+    padding: 5px 0px;
     position: relative;
     height: var(--sidebar-scene-height);
     line-height: var(--sidebar-scene-height);
@@ -24,7 +25,8 @@
     justify-content: flex-start;
 }
 
-.ss-scene-list h2 {
+#token-create .ss-scene-list h2 {
+    background: none;
     margin: 0;
     line-height: calc(var(--sidebar-scene-height) - 10px);
     text-align: center;
@@ -34,13 +36,15 @@
 }
 
 .ss-actor-list {
+    margin: 3px 0px;
     display: flex;
-    border-top: 1px solid var(--color-border-dark);
-    border-bottom: 1px solid var(--color-border-dark-3);
+    border: 2px solid var(--color-border-dark-1);
+    box-shadow: 0 0 20px var(--color-shadow-dark) inset;
     line-height: var(--sidebar-item-height);
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: flex-start;
+    align-items: center;
 }
 
 .ss-actor-list h4 {
@@ -61,7 +65,38 @@
     border: none;
 }
 
-#new_token_tile_select_ui .window-content{
+.ss-seed-scene-select {
+    display: grid;
+    grid-template-columns: auto;
+    align-content: center;
+    
+}
+
+.ss-seed-scene-select ol {
+    padding: 5px;
+    margin: 5px;
+    list-style: none;
+}
+
+.ss-seed-scene-select option {
+    color: var(--color-text-dark-primary);
+}
+
+.ss-seed-scene-select li {
+    display: grid;
+    grid-template-columns: 150px auto;
+    padding: 5px;
+}
+
+#z_comp_sel {
+    color: var(--color-text-light-highlight);
+}
+
+#z_scene_sel {
+    color: var(--color-text-light-highlight);
+}
+
+#new_token_tile_select_ui .window-content, #scene-scroller-selection-form .window-content{
     background: url(/ui/denim075.png) repeat;
     padding: 0px;
 }
@@ -75,20 +110,17 @@
 }
 
 #token-create ol h4 {
-    margin: 0 10px;
+    padding: 5px 0;
+    margin: 0 5px;
     text-align: justify;
     font-weight: normal;
-    background: rbga(255, 255, 255, 0.1);
 }
 
 #token-create ol h2 {
-    padding: 3px;
+    margin: 5px 0px;
+    padding: 5px 3px;
     text-align: center;
     border-bottom: none;
-    background: rbga(255, 255, 255, 0.1);
-}
-
-#token-create ol h3 {
-    background: rbga(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.1);
 }
 
