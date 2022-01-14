@@ -237,14 +237,15 @@ export class SceneScroller {
     /** This function will activate (make visible) the Scene-Tiler tile entered as a parameter.
      *  All adjacent (linked) Scene-Tiler tiles that are already in the scene will also be activated.
      *  All activated Scene-Tiler tiles will be sorted and placed in the main scene window in the correct position relative to each other.
-     *  All the placeable objects belonging to each activated Scene-Tiler tile will be activated and positioned in the main scene.
+     *  Optionally, all the placeable objects belonging to each activated Scene-Tiler tile can be activated and positioned in the main scene.
      *  Tokens that are associated with the activated Scene-Tiler tiles will be activated (visible) and be moved (locally) to their correct
      *    position relative to their associated Scene-Tiler tile.
      * 
-     *  @param {String}         tilerTile       - The tile ID for the 'main' Scene-Tiler tile.
-     *  @return {Boolean}                       - Return true on success.  Return false if the function fails.
+     *  @param {String}         tilerTile               - The tile ID for the 'main' Scene-Tiler tile.
+     *  @param {Boolean}        translatePlaceables     - Optional boolean parameter to indicate if transfering placeables is required.  Defaults to true.
+     *  @return {Boolean}                               - Return true on success.  Return false if the function fails.
      */
-    static displaySubScenes(tilerTile) {
+    static displaySubScenes(tilerTile, translatePlaceables = true) {
         // This is the main Scene Tiler tile:
         const mainTile = canvas.background.get(tilerTile);
         // Get all the linked tiles by the array of ID's saved in main tile flags.  This is an array of UUID's
@@ -287,9 +288,10 @@ export class SceneScroller {
         const smallestY = Math.min(...testY);
         
         // Using the smallestX & smallestY with tilertileCoords map, we can move (locally) all the tiles to the position they need to be in.
-        // The smallest X and smallest Y will be at x = grid and y = grid.
-        // Also move all the tile placeables by the same translation.
+        // The smallest X and smallest Y will be set to position x = grid and y = grid.
+        // If required, move all the tile placeables by the same translation.
         for (const [k,v] of tilerTileCoords.entries()) {
+<<<<<<< HEAD
             const vector = mainTile.document.getFlag("scene-scroller", 'sceneScrollerTilerFlags')
                                     .LinkedTiles.filter(id => id.SceneUUID === v.uuid)[0]
                                     ?.Vector || {x: 0, y: 0};
@@ -307,6 +309,13 @@ export class SceneScroller {
                     walls: placeablesIds?.walls?.map(w => canvas.walls.get(w)) || []
             }
             this.offsetPlaceables(placeables, {x: derivedVector.x, y: derivedVector.y});
+=======
+            k.position.set(k.data.x - smallestX, k.data.y - smallestY);
+            // If required, move all the placeable objects associated with this tile (see Scene-Tiler flags) by the same translation.
+            if ( !translatePlaceables ) continue;
+            const placeables = k.getFlag("scene-tiler", "entities");
+            this.offsetPlaceables(placeables, {x: k.data.x - smallestX, y: k.data.y - smallestY});
+>>>>>>> 854bb742b156a2721a36a38f20dbd0dbf92de2d9
         }
 
         // For each token associated with any particular active tile, move the token to the position (relative to tile TLC) saved in the token flags.
