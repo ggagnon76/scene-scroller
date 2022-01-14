@@ -1,5 +1,6 @@
 import { ModuleName } from "../ss-initialize.js";
 import { getSource } from "./Functions.js";
+import { SceneScroller } from "./SceneScroller.js";
 
 export class ScrollerSelectScene extends FormApplication {
     constructor(resolve) {
@@ -166,14 +167,15 @@ export class ScrollerSelectScene extends FormApplication {
 
     // Create the drag preview for the Token
     if ( actor && canvas.ready ) {
+      const destTileId = li.dataset.documentId;
+      SceneScroller.displaySubScenes(destTileId);
       const img = {src: actor.thumbnail};
       const td = actor.data.token;
       const w = td.width * canvas.dimensions.size * td.scale * canvas.stage.scale.x;
       const h = td.height * canvas.dimensions.size * td.scale * canvas.stage.scale.y;
       const preview = DragDrop.createDragImage(img, w, h);
-      const destTile = li.dataset.documentId;
       event.dataTransfer.setDragImage(preview, w / 2, h / 2);
-      event.dataTransfer.setData("text/plain", JSON.stringify({id: this.draggedActor, type: "Actor", destination: destTile}));
+      event.dataTransfer.setData("text/plain", JSON.stringify({id: this.draggedActor, type: "Actor", destination: destTileId}));
       this.close();
     }
   }

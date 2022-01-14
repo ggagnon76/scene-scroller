@@ -248,51 +248,65 @@ export class SceneScroller {
         // This is the main Scene Tiler tile:
         const mainTile = canvas.background.get(tilerTile);
         // Get all the linked tiles by the array of ID's saved in main tile flags.  This is an array of UUID's
-        const linkedTileUuidArr = mainTile.getFlag('scene-tiler-maker', 'sceneScrollerTilerFlags')
+        const linkedTileUuidArr = mainTile.document.getFlag('scene-scroller', 'sceneScrollerTilerFlags')
                                             .LinkedTiles.map(l => l.SceneUUID);
         // Get all the Scene-Tiler tiles in the scene from scene Flags.  This is an array of tile ID's
         const tilerTilesArr = canvas.scene.getFlag(ModuleName, "sceneScrollerSceneFlags").SceneTilerTileIDsArray;
 
-        // Build a Map with the tileDocument as the Key and object {x: <number>, y: <number>} containing x and y coordinates.
+        // Build a Map with the tileDocument as the Key and object {x: <number>, y: <number>, uuid: <string>} containing x and y coordinates.
         // When adding entries to the map, don't duplicate keys.  Each tileDocument should be unique in the map.
         // If a tileDocument is already in the map, compare the x and y values and keep the smallest.
         const tilerTileCoords = new Map();
-        // Begin by entering the data for the mainTile
-        tilerTileCoords.set(mainTile, {x: mainTile.data.x, y: mainTile.data.y});
+        // Begin by entering the data for the mainTile, whose top left corner (TLC) will be the reference point for the vector for all other tiles.
+        tilerTileCoords.set(mainTile, {
+            x: mainTile.data.x, y: mainTile.data.y, uuid: null});
         // Now iterate for all linkedTiles and add/update the map
         for (const tileId of tilerTilesArr) {
             // Get the tile document for this tileId
             const tile = canvas.background.get(tileId);
             // Get the UUID for this tileId
-            const Uuid = tile.getFlag("scene-tiler", "scene");
+            const Uuid = tile.document.getFlag("scene-tiler", "scene");
             // Skip any tiles that aren't in the mainTile's linked tile array
             if ( !linkedTileUuidArr.includes(Uuid) ) continue;
             // Get the vector associated with this linked tile
-            const vector = mainTile.getFlag("scene-scroller-maker", 'sceneScrollerTilerFlags')
+            const vector = mainTile.document.getFlag("scene-scroller", 'sceneScrollerTilerFlags')
                                     .LinkedTiles.filter(id => id.SceneUUID === Uuid)[0]
                                     .Vector;
             // Update the map with data, as appropriate
-            if ( !tilerTileCoords.has(tile) ) {
-                tilerTileCoords.set(tile, {x: tile.data.x + vector.x, y: tile.data.y + vector.y });
-                continue;
-            }
-            const tileInMap = tilerTileCoords.get(tile);
-            tileInMap.x = (tileInMap.x < tile.data.x + vector.x) ? tileInMap.x : tile.data.x + vector.x;
-            tileInMap.y = (tileInMap.y < tile.data.y + vector.y) ? tileInMap.y : tile.data.y + vector.y;
+            tilerTileCoords.set(tile, {
+                x: tile.data.x - (tile.data.x + vector.x), 
+                y: tile.data.y - (tile.data.y + vector.y),
+                uuid: Uuid
+            })
         }
 
         // Find the smallest X and the smallest Y in the map
-        const smallestX = Math.min(tileInMap.values().map(v => v.x));
-        const smallestY = Math.min(tileInMap.values().map(v => v.y));
+        const testX = Array.from(tilerTileCoords.values()).map(v => {return v.x});
+        const testY = Array.from(tilerTileCoords.values()).map(v => {return v.y});
+        const smallestX = Math.min(...testX);
+        const smallestY = Math.min(...testY);
         
         // Using the smallestX & smallestY with tilertileCoords map, we can move (locally) all the tiles to the position they need to be in.
         // The smallest X and smallest Y will be at x = grid and y = grid.
         // Also move all the tile placeables by the same translation.
         for (const [k,v] of tilerTileCoords.entries()) {
-            k.position.set(k.data.x - smallestX, k.data.y - smallestY);
+            const vector = mainTile.document.getFlag("scene-scroller", 'sceneScrollerTilerFlags')
+                                    .LinkedTiles.filter(id => id.SceneUUID === v.uuid)[0]
+                                    ?.Vector || {x: 0, y: 0};
+            const derivedVector = {x: -vector.x - smallestX, y: -vector.y - smallestY}
+            k.position.set(k.data.x + derivedVector.x, k.data.y + derivedVector.y);
             // Move all the placeable objects associated with this tile (see Scene-Tiler flags) by the same translation.
-            const placeables = k.getFlag("scene-tiler", "entities");
-            this.offsetPlaceables(placeables, {x: k.data.x - smallestX, y: k.data.y - smallestY});
+            const placeablesIds = k.document.getFlag("scene-tiler", "entities");
+            const placeables = {
+                    drawings: placeablesIds?.drawings?.map(d => canvas.drawings.get(d)) || [],
+                    lights: placeablesIds?.lights?.map(l => canvas.lighting.get(l)) || [],
+                    notes: placeablesIds?.notes?.map(n => canvas.notes.get(n)) || [],
+                    sounds: placeablesIds?.sounds?.map(s => canvas.sounds.get(s)) || [],
+                    templates: placeablesIds?.templates?.map(t => canvas.templates.get(t)) || [],
+                    tiles: placeablesIds?.tiles?.map(t => canvas.background.get(t) || canvas.foreground.get(t)) || [],
+                    walls: placeablesIds?.walls?.map(w => canvas.walls.get(w)) || []
+            }
+            this.offsetPlaceables(placeables, {x: derivedVector.x, y: derivedVector.y});
         }
 
         // For each token associated with any particular active tile, move the token to the position (relative to tile TLC) saved in the token flags.

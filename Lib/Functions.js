@@ -175,7 +175,7 @@ async function largestSceneSize(scn, actvTiles) {
         const tile = canvas.background.get(tileID);
         const uuidArray = tile.document.getFlag(ModuleName, "sceneScrollerTilerFlags").LinkedTiles.map(t => t.SceneUUID);
         // Now, get all the tiles in the background and map those that have Scene Tiler flags with scene UUID's in them
-        const bgTileUuidArray = canvas.background.placeables.map(t => t.data.flags["scene-tiler"].scene);
+        const bgTileUuidArray = canvas.background.placeables.map(t => t.data?.flags["scene-tiler"]?.scene);
         // Now filter uuidArray to only include tiles present in bgTileUuidArray
         const filteredUuidArray = uuidArray.filter(u => bgTileUuidArray.includes(u));
 
@@ -185,7 +185,7 @@ async function largestSceneSize(scn, actvTiles) {
         const coordArrayX = [tile.data.x, tile.data.x + tile.width];
         const coordArrayY = [tile.data.y, tile.data.y + tile.height];
         for (const linkedUuid of filteredUuidArray) {
-            const linkedTile = canvas.background.placeables.filter(t => t.data.flags["scene-tiler"].scene === linkedUuid)[0];
+            const linkedTile = canvas.background.placeables.filter(t => t.data?.flags["scene-tiler"]?.scene === linkedUuid)[0];
             const vector = tile.data.flags["scene-scroller"].sceneScrollerTilerFlags.LinkedTiles.filter(l => l.SceneUUID === linkedUuid)[0].Vector;
             const derivedTLCCoords = {x: linkedTile.data.x + vector.x, y: linkedTile.data.y + vector.y};
             coordArrayX.push(derivedTLCCoords.x);
