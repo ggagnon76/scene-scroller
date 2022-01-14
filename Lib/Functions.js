@@ -185,10 +185,6 @@ async function largestSceneSize(scn, actvTiles) {
         const coordArrayX = [tile.data.x, tile.data.x + tile.width];
         const coordArrayY = [tile.data.y, tile.data.y + tile.height];
         for (const linkedUuid of filteredUuidArray) {
-<<<<<<< HEAD
-            const linkedTile = canvas.background.placeables.filter(t => t.data?.flags["scene-tiler"]?.scene === linkedUuid)[0];
-=======
->>>>>>> 854bb742b156a2721a36a38f20dbd0dbf92de2d9
             const vector = tile.data.flags["scene-scroller"].sceneScrollerTilerFlags.LinkedTiles.filter(l => l.SceneUUID === linkedUuid)[0].Vector;
             const derivedTLCCoords = {x: tile.data.x + vector.x, y: tile.data.y + vector.y};
             coordArrayX.push(derivedTLCCoords.x);

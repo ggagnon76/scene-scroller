@@ -291,13 +291,13 @@ export class SceneScroller {
         // The smallest X and smallest Y will be set to position x = grid and y = grid.
         // If required, move all the tile placeables by the same translation.
         for (const [k,v] of tilerTileCoords.entries()) {
-<<<<<<< HEAD
             const vector = mainTile.document.getFlag("scene-scroller", 'sceneScrollerTilerFlags')
                                     .LinkedTiles.filter(id => id.SceneUUID === v.uuid)[0]
                                     ?.Vector || {x: 0, y: 0};
             const derivedVector = {x: -vector.x - smallestX, y: -vector.y - smallestY}
             k.position.set(k.data.x + derivedVector.x, k.data.y + derivedVector.y);
-            // Move all the placeable objects associated with this tile (see Scene-Tiler flags) by the same translation.
+            // If required, move all the placeable objects associated with this tile (see Scene-Tiler flags) by the same translation.
+            if ( !translatePlaceables ) continue;
             const placeablesIds = k.document.getFlag("scene-tiler", "entities");
             const placeables = {
                     drawings: placeablesIds?.drawings?.map(d => canvas.drawings.get(d)) || [],
@@ -309,13 +309,6 @@ export class SceneScroller {
                     walls: placeablesIds?.walls?.map(w => canvas.walls.get(w)) || []
             }
             this.offsetPlaceables(placeables, {x: derivedVector.x, y: derivedVector.y});
-=======
-            k.position.set(k.data.x - smallestX, k.data.y - smallestY);
-            // If required, move all the placeable objects associated with this tile (see Scene-Tiler flags) by the same translation.
-            if ( !translatePlaceables ) continue;
-            const placeables = k.getFlag("scene-tiler", "entities");
-            this.offsetPlaceables(placeables, {x: k.data.x - smallestX, y: k.data.y - smallestY});
->>>>>>> 854bb742b156a2721a36a38f20dbd0dbf92de2d9
         }
 
         // For each token associated with any particular active tile, move the token to the position (relative to tile TLC) saved in the token flags.
