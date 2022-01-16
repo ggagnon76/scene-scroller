@@ -44,8 +44,7 @@ export class SceneScroller {
 
     static SceneScrollerTokenFlags = {
         CurrentTile: "",  // The Scene Tiler tile ID of the tile the token is currently occupying
-        Vector: {},  // ex: {x: 0, y: 0} An object with x & y coordinates in pixels, relative to the top left corner of CurrentTile
-        ActiveTilerTileIDs: [], // A subset of the SceneTilerTileIDsArray from Scene Flags that represents tiles the token can see with vision.
+        inTileLoc: {},  // ex: {x: 0, y: 0} An object with x & y coordinates in pixels, relative to the top left corner of CurrentTile
     }
 
     /** A variable to identify when to supress canvas#draw()
@@ -230,7 +229,7 @@ export class SceneScroller {
         }
         
         // Launch a formApplication here.
-        new NewTokenTileSelectUI(data).render(true);
+        new NewTokenTileSelectUI(data, {left: ui.sidebar._element[0].offsetLeft - 300, top: 100}).render(true);
         return false;
     }
 

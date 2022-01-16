@@ -79,10 +79,10 @@ export class ScrollerSelectScene extends FormApplication {
   /* -------------------------------------------------------------------------------------------*/
 
   export class NewTokenTileSelectUI extends Application { 
-     constructor(data){
-       super();
+     constructor(data, options={}){
+       super(options);
        this._dragDrop[0].permissions["dragstart"] = () => game.user.can("TOKEN_CREATE");
-       this.draggedActor = data.actorId;
+       this.draggedActor = data.actorId || data._id;
      } 
   
     /** @override */
@@ -150,15 +150,28 @@ export class ScrollerSelectScene extends FormApplication {
 
     Hooks.once('dropCanvasData', async (canvas, data) => {
       const actor = game.actors.get(data.id);
+      const tile = canvas.background.get(data.destination)
       await actor.data.token.update({flags: {
         SceneScrollerTokenFlags: {
-          CurrentTile: data.destination
+          CurrentTile: data.destination,
+          inTileLoc: {x: data.x - tile.position._x, y: data.y - tile.position._y}
         }
       }})
+      const d = canvas.dimensions;
+      data.x = d.paddingX;
+      data.y = d.paddingY;
+
+      // ClientDatabaseBackend#_createEmbeddedDocuments will update the scene which will reposition the tile(s) at grid 1 x grid 1.
+      // TO-DO: If a token is controlled, reposition the tiles.  If not, do nothing but reset visibility to hidden.
+      Hooks.once('createToken', () => {
+        //SceneScroller.displaySubScenes(destTileId, false)
+      })
     })
 
     const li =  event.currentTarget.closest(".ss-scene-list") ||
                 event.currentTarget.closest(".ss-actor-list");
+    const destTileId = li.dataset.documentId;
+
     let actor = null;
     if ( this.draggedActor ) {
       actor = game.actors.get(this.draggedActor);
@@ -167,8 +180,7 @@ export class ScrollerSelectScene extends FormApplication {
 
     // Create the drag preview for the Token
     if ( actor && canvas.ready ) {
-      const destTileId = li.dataset.documentId;
-      SceneScroller.displaySubScenes(destTileId);
+      SceneScroller.displaySubScenes(destTileId, false);
       const img = {src: actor.thumbnail};
       const td = actor.data.token;
       const w = td.width * canvas.dimensions.size * td.scale * canvas.stage.scale.x;

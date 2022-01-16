@@ -69,8 +69,8 @@ export function refreshSceneAfterResize(size) {
         grid: canvas.scene.data.grid
     });
     canvas.stage.hitArea = new PIXI.Rectangle(0, 0, canvas.dimensions.width, canvas.dimensions.height);
-    canvas.msk.clear().beginFill(0xFFFFFF, 1.0).drawShape(canvas.dimensions.rect).endFill();
     canvas.background.drawOutline(canvas.outline);
+    canvas.msk.clear().beginFill(0xFFFFFF, 1.0).drawShape(canvas.dimensions.rect).endFill();
 }
 
 /** This function pans the scene by the same amount as the input vector
@@ -185,28 +185,28 @@ async function largestSceneSize(scn, actvTiles) {
         const coordArrayX = [tile.data.x, tile.data.x + tile.width];
         const coordArrayY = [tile.data.y, tile.data.y + tile.height];
         for (const linkedUuid of filteredUuidArray) {
+            const linkedTile = canvas.background.placeables.filter(t => t.data.flags["scene-tiler"]?.scene === linkedUuid)[0];
             const vector = tile.data.flags["scene-scroller"].sceneScrollerTilerFlags.LinkedTiles.filter(l => l.SceneUUID === linkedUuid)[0].Vector;
-            const derivedTLCCoords = {x: tile.data.x + vector.x, y: tile.data.y + vector.y};
+            const derivedTLCCoords = {x: linkedTile.data.x - vector.x, y: tile.data.y - vector.y};
             coordArrayX.push(derivedTLCCoords.x);
             coordArrayY.push(derivedTLCCoords.y);
             // Do the same again, adding linkedTile width and height to the coordinates (top right corner, bottom left corner)
-            const derivedWHCoords = {x: tile.data.x + vector.x + tile.width, y: tile.data.y + vector.y + tile.height}
+            const derivedWHCoords = {x: linkedTile.data.x - vector.x + linkedTile.data.width, y: linkedTile.data.y - vector.y + linkedTile.data.height}
             coordArrayX.push(derivedWHCoords.x);
             coordArrayY.push(derivedWHCoords.y);
         }
 
         // Now we need to find the largest x and y, the smallest x and y, and substract the smallest from the largest to get the new scene width and height.
-        const largestX = Math.max(...coordArrayX);
-        const largestY = Math.max(...coordArrayY);
-        const smallestX = Math.min(...coordArrayX);
-        const smallestY = Math.min(...coordArrayY);
-
-        const newWidth = largestX - smallestX;
-        const newHeight = largestY - smallestY;
+        const newWidth = Math.max(...coordArrayX) - Math.min(...coordArrayX);
+        const newHeight = Math.max(...coordArrayY) - Math.min(...coordArrayY);
 
         if (newWidth > sceneDimensions.width) sceneDimensions.width = newWidth;
         if (newHeight > sceneDimensions.height) sceneDimensions.height = newHeight;
     }
+
+    // Make sure the sceneDimensions are multipls of grid.size
+    sceneDimensions.width = Math.ceil(sceneDimensions.width / d.size) * d.size;
+    sceneDimensions.height = Math.ceil(sceneDimensions.height / d.size) * d.size;
 
     if (sceneDimensions.width !== d.sceneWidth || sceneDimensions.height !== d.sceneHeight) {
         await resizeScene(sceneDimensions);
