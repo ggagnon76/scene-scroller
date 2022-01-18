@@ -2,6 +2,10 @@ import { ModuleName } from "../ss-initialize.js";
 import { getSource, resetMainScene } from "./Functions.js";
 import { SceneScroller } from "./SceneScroller.js";
 
+/** Form application that will be invoked when the DM activates a scene to become
+ *  a Scene-Scroller viewport.
+ *  The form will request the DM choose a compendium and then a seed scene.
+ */
 export class ScrollerSelectScene extends FormApplication {
     constructor(resolve) {
       super();
@@ -78,6 +82,17 @@ export class ScrollerSelectScene extends FormApplication {
 
   /* -------------------------------------------------------------------------------------------*/
 
+  /** This is a window that will be invoked every time a user or DM tries to create a token,
+   *  either programmatically (via preCreateToken Hook) or by dragging an actor from the actor
+   *  folder onto the canvas (wrapped ActorDirectory#_onDragStart).
+   * 
+   *  The window will provide a list of sub-scenes (Scene Tiler tiles) to choose that are already in the 
+   *  main scene (viewport) as well as a list of all tokens, such that the user can 
+   *  select the sub-scene a token occupies by choosing the token.
+   * 
+   *  This is necessary because the location of the token is stored in token flags, and is relative
+   *  to the top left corner of the tile it occupies.
+   */
   export class NewTokenTileSelectUI extends Application { 
      constructor(data, options={}){
        super(options);

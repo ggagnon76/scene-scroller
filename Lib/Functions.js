@@ -34,7 +34,7 @@ export function log(force, ...args) {
 }
 
 /**
- * A function that clears all the placeable objects referenced by the Tiler Tile, then deletes the tile.
+ * A function that clears all the placeable objects referenced by the sub-scene (Scene Tiler tile), then deletes the tile.
  * @param {Tile}    tile        - The Scene Tiler tile to be deleted.
  * @return {void}
  */
@@ -53,6 +53,8 @@ export async function deleteTilerTile(tile) {
  *  Has to be executed on GM client and player clients via socket.
  *  @param {Object}         size        - the new scene size, format: {width: <Number>, height: <Number>}
  *  @return {void}
+ * 
+ *  THERE'S A BUG IN THIS FUNCTION.  SOMETIMES THE hitArea DOESN'T SEEM TO BE SET PROPERLY...?
  */
 export function refreshSceneAfterResize(size) {
 
@@ -108,7 +110,7 @@ async function resizeScene(size) {
 
     await canvas.scene.update({width: size.width + 2 * d.size, height: size.height + 2 * d.size});
 
-    // Update the underlying data since we're preventing a canvas.draw()
+    // Update the underlying data since we're preventing a canvas#draw()
     socketWrapper("refreshAfterResize", size)
 
     // Now move all placeables by a to-be-determined vector
@@ -238,7 +240,9 @@ async function transferCompendiumSceneFlags(source, tile) {
         return false;
     }
 
-    await tile.setFlag(ModuleName, "sceneScrollerTilerFlags", flags);
+    for (const [k,v] of Object.entries(flags)) {
+        await tile.setFlag(ModuleName, k, v);
+    }
 
     return true;
 }
@@ -270,14 +274,18 @@ export async function createTilerTile(source) {
     if ( !isTransfer) return false;
 
     // Update main scene flags with the array of created Scene Tiler tiles.
-    let mainSceneFlags;
+    let mainSceneFlags = foundry.utils.deepClone(SceneScroller.sceneScrollerSceneFlags);
     const isFlags = canvas.scene.data.flags.hasOwnProperty(ModuleName);
-    if ( !isFlags ) {
-        mainSceneFlags =  foundry.utils.deepClone(SceneScroller.sceneScrollerSceneFlags);
-    } else mainSceneFlags = foundry.utils.deepClone(canvas.scene.getFlag(ModuleName, "sceneScrollerSceneFlags"));
+    if ( isFlags ) {
+        for (const [k,v] of Object.entries(mainSceneFlags)) {
+            v = foundry.utils.deepClone(canvas.scene.getFlag(ModuleName, k));
+        }
+    }
 
     mainSceneFlags.SceneTilerTileIDsArray.push(myTile.id);
-    await canvas.scene.setFlag(ModuleName, "sceneScrollerSceneFlags", mainSceneFlags);
+    for (const [k,v] of Object.entries(mainSceneFlags)) {
+        await canvas.scene.setFlag(ModuleName, k, v);
+    }
 
     // If necessary, resize the scene to fit the largest of: any tile plus all it's linked tiles.
     const isResize = await largestSceneSize(canvas.scene, mainSceneFlags.SceneTilerTileIDsArray);
@@ -290,15 +298,21 @@ export async function createTilerTile(source) {
     return myTile;
 }
 
+/** When the viewport is showing sub-scenes, this function will reset everything to their home positions
+ *  @param {Boolean}        translatePlaceables         - Defaults to true.  (token creation sub-scene preview will not move placeables)
+ *  @return {void}  
+ */
 export function resetMainScene(translatePlaceables = true) {
-    // Get ID's for all Scene Tiler tiles in the main scene.
+    // Get ID's for all sub-scenes (Scene Tiler tiles) in the viewport (main Foundry scene).
     const tilerTilesArr = canvas.scene.getFlag(ModuleName, "sceneScrollerSceneFlags").SceneTilerTileIDsArray;
-    // Map tilerTilesArr to find only tiles that are not at their home position
+    // Map tilerTilesArr to find only sub-scenes that are not at their home position
     const d = canvas.dimensions;
     const tilesToHomeArr = tilerTilesArr.map(t => {
         const tile = canvas.background.get(t);
         if ( tile.position._x !== d.size + d.paddingX || tile.position._y !== d.size + d.paddingY ) return tile
     }).filter(t => t !== undefined);
+
+    // Gather arrays of placeable IDs, then move everything by a derived vector.
     for (const tile of tilesToHomeArr) {
         const placeablesIds = tile.document.getFlag("scene-tiler", "entities");
         const placeables = tilerTilePlaceables(placeablesIds);
@@ -312,7 +326,7 @@ export function resetMainScene(translatePlaceables = true) {
         if ( translatePlaceables ) SceneScroller.offsetPlaceables(placeables, vector);
     }
 
-    // All tokens should be at their home position
+    // All tokens should also be at their home position
     const tokensArr = canvas.tokens.placeables;
     for (const token of tokensArr) {
         token.position.set(d.paddingX, d.paddingY);
@@ -321,6 +335,9 @@ export function resetMainScene(translatePlaceables = true) {
     }
 }
 
+/** This function will convert the array of placeable ID's obtained from the Scene Tiler flags
+ *  into arrays of objects
+ */
 export function tilerTilePlaceables(placeablesId) {
     const placeables = {};
     for (const [k,v] of Object.entries(placeablesId)) {
@@ -351,20 +368,37 @@ export function tilerTilePlaceables(placeablesId) {
     return placeables;
 }
 
-export async function preUpdateTokenFlags(doc, data, options, id) {
+/** This function is called by a preUpdateToken hook.  See ss-initialize.js
+ *  The purpose of this function is to populate the token flags with coordinates
+ *  defining the relation of the token to the tile top left corner (TLC)
+ *  @param {Object}             Token       - The token object passed by the hook
+ *  @param {Object}             data        - An object containing the changes passed by the hook
+ *  @param {Object}             options     - An ojbect of options passed by the hook
+ *  @param {Object}             id          - The id of ?? passed by the hook
+ *  @return {void}
+ */
+export async function preUpdateTokenFlags(token, data, options, id) {
     if ( !SceneScroller.isScrollerScene(canvas.scene) ) return;
+    // Only interested in token movement.
     if ( !data.hasOwnProperty("x") && !data.hasOwnProperty("y")) return;
+    // If the change is to update the token to the home position, allow this.
     const d = canvas.dimensions;
     if ( data.x === d.paddingX && data.y === d.paddingY) return;
 
-    const destTile = canvas.background.get(doc.data.flags[ModuleName].CurrentTile);
-    const currLoc = doc.getFlag(ModuleName, "inTileLoc");
+    // There is a change representing token movement.  Update the token flags with the new location.
+    // Don't alter the changes, to maintain the proper direction for token animation.
+    const destTile = canvas.background.get(token.data.flags[ModuleName].CurrentTile);
+    const currLoc = token.getFlag(ModuleName, "inTileLoc");
     const newLoc = {};
     newLoc.x = data.hasOwnProperty("x") ? data.x - destTile.position._x : currLoc.x;
     newLoc.y = data.hasOwnProperty("y") ? data.y - destTile.position._y : currLoc.y;
-    await doc.data.update({"flags.scene-scroller.inTileLoc" : {x: newLoc.x, y: newLoc.y}});
+    await token.data.update({"flags.scene-scroller.inTileLoc" : {x: newLoc.x, y: newLoc.y}});
 }
 
+/** This function is called when the token needs to be placed in the viewport relative to its parent sub-scene
+ *  @param {Object}         token           - The token object to be translated.
+ *  @return {void}
+ */
 export function moveTokenLocal(token) {
     const tile = canvas.background.get(token.data.flags[ModuleName].CurrentTile);
     const tileOffset = token.data.flags[ModuleName].inTileLoc;
@@ -373,16 +407,28 @@ export function moveTokenLocal(token) {
     token.data.y = tile.position._y + tileOffset.y;
 }
 
+/** This function is called by the 'controlToken' hook.  See ss-initialize.js
+ *  When a token selected (controlled) or released, this will automatically reset the home position of the token
+ *  regardless of where it is in the viewport, as a precaution.
+ *  If the token is being released, any animations will be terminated and the viewport will be reset
+ *  If the token is being controlled, the viewport will be updated to show the relevant sub-scenes
+ *  @param {Object}         token           - The token oject
+ *  @param {Boolean}        isControlled    - A boolean indicating if the token is being controlled (true) or released (false)
+ *  @return {void}
+ */
 export async function controlToken(token, isControlled) {
+    // If the token is not at its home position (for whatever reason)
     const d = canvas.dimensions;
     if ( token.data.x !== d.paddingX || token.data.y !== d.paddingY) {
         await token.document.update({x: d.paddingX, y: d.paddingY}, {animate: false})
     }
+    // If the token is being released
     if ( !isControlled ) {
         canvas.tokens.concludeAnimation();
         return resetMainScene();
     }
-        
+
+    // If the token is being controlled.
     const destTile = token.data.flags[ModuleName].CurrentTile;
     SceneScroller.displaySubScenes(destTile);
 }

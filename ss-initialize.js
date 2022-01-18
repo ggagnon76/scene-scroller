@@ -26,7 +26,7 @@ Hooks.once('init', () => {
 
 /** Hook once on 'READY' to initialize the following:
  *   - Initialize the socket
- *   - Make the SceneScroller class available as an api.
+ *   - Make the SceneScroller class available as an api.  For debugging.  Review this before any kind of public release.
  */
 Hooks.once('ready', () => {
     game.socket.on(SocketModuleName, message_handler);
@@ -39,6 +39,9 @@ Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
     registerPackageDebugFlag(ModuleName);
 });
 
+// Token creation workflow
 Hooks.on('preCreateToken', SceneScroller.tokenCreate);
+// Viewport management workflow
 Hooks.on('controlToken', controlToken);
+// Token movement workflow
 Hooks.on('preUpdateToken', preUpdateTokenFlags);

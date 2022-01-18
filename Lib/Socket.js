@@ -2,6 +2,48 @@ import * as utils from "./Functions.js"
 import { SceneScroller } from "./SceneScroller.js"
 import { SocketModuleName } from "../ss-initialize.js"
 
+/** A dictionary of actions.  Avoids typos and VS Code autocompletes, making it much easier to code. */
+export const msgDict = {
+    preventCanvasDrawTrue: "preventCanvasDrawTrue",
+    preventCanvasDrawFalse: "preventCanvasDrawFalse",
+    refreshAfterResize: "refreshAfterResize",
+    vectorPanScene: "vectorPanScene",
+    translatePlaceables: "translatePlaceables"
+}
+
+/** A wrapper function that will execute code on the GM client and then request the same code be executed by all clients.
+ *  
+ * @param {String}          requestID   - A string that will map to an object key to execute a function.
+ * @param {any}             data        - Data to be passed to the function as arguments.
+ * @return {void}
+ */
+export async function socketWrapper(requestID, data) {
+    switch(requestID) {
+        case msgDict.preventCanvasDrawTrue:
+            SceneScroller.PreventCanvasDraw = true;
+            game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawTrue});
+            break;
+        case msgDict.preventCanvasDrawFalse:
+            SceneScroller.PreventCanvasDraw = false;
+            game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawFalse});
+            break;
+        case msgDict.refreshAfterResize:
+            utils.refreshSceneAfterResize(data);
+            game.socket.emit(SocketModuleName, {action: msgDict.refreshAfterResize, data: data});
+            break;
+        case msgDict.vectorPanScene:
+            utils.vectorPan(data);
+            game.socket.emit(SocketModuleName, {action: msgDict.vectorPanScene, data: data});
+            break;
+        case msgDict.translatePlaceables:
+            const {placeables, vector, save} = data;
+            await SceneScroller.offsetPlaceables(placeables, vector, save);
+            // code below causes errors.  Something about the data being recursive.  May need to rebuild the data on the client side.
+            //game.socket.emit(SocketModuleName, {action: msgDict.translatePlaceables, data: data})
+    }
+}
+
+/** When the socketWrapper function emits an action, the client(s) will process as defined below */
 export async function message_handler(request) {
     switch (request.action) {
         case msgDict.preventCanvasDrawTrue:
@@ -24,52 +66,4 @@ export async function message_handler(request) {
             log(false, "Did not find action in message_handler() function.")
             log(false, "Requested action: " + request.action) 
     }
-}
-
-/** A dictionary of actions.  Avoids typos and is easier to reference when coding. */
-export const msgDict = {
-    preventCanvasDrawTrue: "preventCanvasDrawTrue",
-    preventCanvasDrawFalse: "preventCanvasDrawFalse",
-    refreshAfterResize: "refreshAfterResize",
-    vectorPanScene: "vectorPanScene",
-    translatePlaceables: "translatePlaceables"
-}
-
-/** A companion dictionary for socketWrapper() function.
- *  The selected function will execute for the GM client and then by the player clients via sockets.
- */
-const socketDict = {
-    [msgDict.preventCanvasDrawTrue]: () => {
-        SceneScroller.PreventCanvasDraw = true;
-        game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawTrue})
-    },
-    [msgDict.preventCanvasDrawFalse]: () => {
-        SceneScroller.PreventCanvasDraw = false;
-        game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawFalse})
-    },
-    [msgDict.refreshAfterResize]: (data) => {
-        utils.refreshSceneAfterResize(data);
-        game.socket.emit(SocketModuleName, {action: msgDict.refreshAfterResize, data: data})
-    },
-    [msgDict.vectorPanScene]: (data) => {
-        utils.vectorPan(data);
-        game.socket.emit(SocketModuleName, {action: msgDict.vectorPanScene, data: data})
-    },
-    [msgDict.translatePlaceables]: async (data) => {
-        const {placeables, vector, save} = data;
-        await SceneScroller.offsetPlaceables(placeables, vector, save);
-        //game.socket.emit(SocketModuleName, {action: msgDict.translatePlaceables, data: data})
-    }
-
-}
-
-/** A wrapper function that will execute code on the GM client and then request the same code be executed by all clients.
- *  
- * @param {String}          requestID   - A string that will map to an object key to execute a function.
- * @param {any}             data        - Data to be passed to the function as arguments.
- * @return {void}
- */
-export async function socketWrapper(requestID, data) {
-    const fn = socketDict[requestID];
-    fn(data);
 }
