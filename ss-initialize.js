@@ -1,5 +1,7 @@
 import { message_handler, socketWrapper, msgDict } from "./lib/Socket.js";
 import { SceneScroller } from "./lib/SceneScroller.js";
+import * as wrapper from "./lib/Wrap.js"
+import { controlToken, preUpdateTokenFlags } from "./lib/Functions.js"
 
 // Boolean to be used for any entry function that will launch Scene Scroller methods or functions.
 // If isReady is false (not ready), then the module should offer not functionality at all.
@@ -18,39 +20,11 @@ export const SocketModuleName = "module." + ModuleName
  *   is too late.  If a wrapper doesn't work it may need to be wrapped earlier (init is as early as it gets) or later.
  */
 Hooks.once('init', () => {
-    libWrapper.register(ModuleName, 'Scene.prototype._onUpdate', function (wrapped, ...args) {
-        const [data, options, userId] = args;
-        if (!SceneScroller.PreventCanvasDraw) return wrapped(data, options, userId);
-        delete data?.drawings;
-        delete data?.lights;
-        delete data?.sounds;
-        delete data?.templates;
-        delete data?.tiles;
-        delete data?.tokens;
-        delete data?.walls;
-        delete data?.height;
-        delete data?.width;
-
-        socketWrapper(msgDict.preventCanvasDrawFalse)
-        return wrapped(data, options, userId);
-      }, 'WRAPPER');
-    
-    libWrapper.register(ModuleName, 'ActorDirectory.prototype._onDragStart', function(wrapped, ...args) {
-        if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
-        const event = args[0];
-        event.preventDefault();
-        const li = event.currentTarget.closest(".directory-item");
-        let actor = null;
-        if ( li.dataset.documentId ) {
-            actor = game.actors.get(li.dataset.documentId);
-            if ( !actor || !actor.visible ) return wrapped(...args);
-        }
-        SceneScroller.tokenCreate(actor, actor.data);
-    }, 'MIXED');
+    wrapper.scene_onupdate();
+    wrapper.actordirectory_ondragstart();
 })
 
 /** Hook once on 'READY' to initialize the following:
- *   - All libWrapper wrappers
  *   - Initialize the socket
  *   - Make the SceneScroller class available as an api.
  */
@@ -65,4 +39,6 @@ Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
     registerPackageDebugFlag(ModuleName);
 });
 
-Hooks.on('preCreateToken', (...args) => {return SceneScroller.tokenCreate(...args)});
+Hooks.on('preCreateToken', SceneScroller.tokenCreate);
+Hooks.on('controlToken', controlToken);
+Hooks.on('preUpdateToken', preUpdateTokenFlags);

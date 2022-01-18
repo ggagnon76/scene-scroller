@@ -290,3 +290,99 @@ export async function createTilerTile(source) {
     return myTile;
 }
 
+export function resetMainScene(translatePlaceables = true) {
+    // Get ID's for all Scene Tiler tiles in the main scene.
+    const tilerTilesArr = canvas.scene.getFlag(ModuleName, "sceneScrollerSceneFlags").SceneTilerTileIDsArray;
+    // Map tilerTilesArr to find only tiles that are not at their home position
+    const d = canvas.dimensions;
+    const tilesToHomeArr = tilerTilesArr.map(t => {
+        const tile = canvas.background.get(t);
+        if ( tile.position._x !== d.size + d.paddingX || tile.position._y !== d.size + d.paddingY ) return tile
+    }).filter(t => t !== undefined);
+    for (const tile of tilesToHomeArr) {
+        const placeablesIds = tile.document.getFlag("scene-tiler", "entities");
+        const placeables = tilerTilePlaceables(placeablesIds);
+        const vector = {
+            x: (d.paddingX + d.size) - tile.position._x,
+            y: (d.paddingY + d.size) - tile.position._y 
+        }
+        tile.position.set(d.paddingX + d.size, d.paddingY + d.size);
+        tile.data.x = d.paddingX + d.size;
+        tile.data.y = d.paddingY + d.size;
+        if ( translatePlaceables ) SceneScroller.offsetPlaceables(placeables, vector);
+    }
+
+    // All tokens should be at their home position
+    const tokensArr = canvas.tokens.placeables;
+    for (const token of tokensArr) {
+        token.position.set(d.paddingX, d.paddingY);
+        token.data.x = d.paddingX;
+        token.data.y = d.paddingY;
+    }
+}
+
+export function tilerTilePlaceables(placeablesId) {
+    const placeables = {};
+    for (const [k,v] of Object.entries(placeablesId)) {
+        switch (k) {
+            case "drawings":
+                placeables[k] = v?.map(d => canvas.drawings.get(d));
+                break;
+            case "lights":
+                placeables[k] = v?.map(l => canvas.lighting.get(l));
+                break;
+            case "notes":
+                placeables[k] = v?.map(n => canvas.notes.get(n));
+                break;
+            case "sounds":
+                placeables[k] = v?.map(s => canvas.sounds.get(s));
+                break;
+            case "templates":
+                placeables[k] = v?.map(t => canvas.templates.get(t));
+                break;
+            case "tiles":
+                placeables[k] = v?.map(t => canvas.background.get(t) || canvas.foreground.get(t));
+                break;
+            case "walls":
+                placeables[k] = v?.map(w => canvas.walls.get(w));
+                break;
+        }
+    }
+    return placeables;
+}
+
+export async function preUpdateTokenFlags(doc, data, options, id) {
+    if ( !SceneScroller.isScrollerScene(canvas.scene) ) return;
+    if ( !data.hasOwnProperty("x") && !data.hasOwnProperty("y")) return;
+    const d = canvas.dimensions;
+    if ( data.x === d.paddingX && data.y === d.paddingY) return;
+
+    const destTile = canvas.background.get(doc.data.flags[ModuleName].CurrentTile);
+    const currLoc = doc.getFlag(ModuleName, "inTileLoc");
+    const newLoc = {};
+    newLoc.x = data.hasOwnProperty("x") ? data.x - destTile.position._x : currLoc.x;
+    newLoc.y = data.hasOwnProperty("y") ? data.y - destTile.position._y : currLoc.y;
+    await doc.data.update({"flags.scene-scroller.inTileLoc" : {x: newLoc.x, y: newLoc.y}});
+}
+
+export function moveTokenLocal(token) {
+    const tile = canvas.background.get(token.data.flags[ModuleName].CurrentTile);
+    const tileOffset = token.data.flags[ModuleName].inTileLoc;
+    token.position.set(tile.position._x + tileOffset.x, tile.position._y + tileOffset.y);
+    token.data.x = tile.position._x + tileOffset.x;
+    token.data.y = tile.position._y + tileOffset.y;
+}
+
+export async function controlToken(token, isControlled) {
+    const d = canvas.dimensions;
+    if ( token.data.x !== d.paddingX || token.data.y !== d.paddingY) {
+        await token.document.update({x: d.paddingX, y: d.paddingY}, {animate: false})
+    }
+    if ( !isControlled ) {
+        canvas.tokens.concludeAnimation();
+        return resetMainScene();
+    }
+        
+    const destTile = token.data.flags[ModuleName].CurrentTile;
+    SceneScroller.displaySubScenes(destTile);
+}

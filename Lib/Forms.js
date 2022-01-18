@@ -1,5 +1,5 @@
 import { ModuleName } from "../ss-initialize.js";
-import { getSource } from "./Functions.js";
+import { getSource, resetMainScene } from "./Functions.js";
 import { SceneScroller } from "./SceneScroller.js";
 
 export class ScrollerSelectScene extends FormApplication {
@@ -119,13 +119,13 @@ export class ScrollerSelectScene extends FormApplication {
       // This section gets all the actors with tokens currently in the main scene
       // Get an array of all tokens that are linked to actors
       const allTokens = canvas.tokens.placeables;
-      // Filter allTokens to find only those that have SceneScrollerTokenFlags in their flags.
-      allTokens.filter(t => t.data.flags.hasOwnProperty("SceneScrollerTokenFlags"));
+      // Filter allTokens to find only those that have 'scene-scroller' in their flags.
+      allTokens.filter(t => t.data.flags.hasOwnProperty(ModuleName));
       // Map the allTokens array to create an array of objects containing actor documents and destination tile IDs.
 
       const allActors = allTokens.map(t => {
         const actor = game.actors.get(t.data.actorId);
-        const destination = t.data.flags.SceneScrollerTokenFlags.CurrentTile ||
+        const destination = t.data.flags[ModuleName].CurrentTile ||
                             t.data; 
         return {actor: actor, tileId: destination};
       });
@@ -150,23 +150,19 @@ export class ScrollerSelectScene extends FormApplication {
 
     Hooks.once('dropCanvasData', async (canvas, data) => {
       const actor = game.actors.get(data.id);
-      const tile = canvas.background.get(data.destination)
-      await actor.data.token.update({flags: {
-        SceneScrollerTokenFlags: {
-          CurrentTile: data.destination,
-          inTileLoc: {x: data.x - tile.position._x, y: data.y - tile.position._y}
+      
+      await actor.data.token.update({"flags": {
+        "scene-scroller": {
+          "CurrentTile": data.destination,
+          "inTileLoc": null
         }
       }})
-      const d = canvas.dimensions;
-      data.x = d.paddingX;
-      data.y = d.paddingY;
 
-      // ClientDatabaseBackend#_createEmbeddedDocuments will update the scene which will reposition the tile(s) at grid 1 x grid 1.
-      // TO-DO: If a token is controlled, reposition the tiles.  If not, do nothing but reset visibility to hidden.
       Hooks.once('createToken', () => {
-        //SceneScroller.displaySubScenes(destTileId, false)
+        resetMainScene(false);
       })
     })
+
 
     const li =  event.currentTarget.closest(".ss-scene-list") ||
                 event.currentTarget.closest(".ss-actor-list");

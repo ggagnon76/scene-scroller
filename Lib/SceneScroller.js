@@ -1,7 +1,7 @@
-import { ModuleName } from "../ss-initialize.js";
+ import { ModuleName } from "../ss-initialize.js";
 import { ScrollerSelectScene, NewTokenTileSelectUI } from "./Forms.js";
 import { socketWrapper, msgDict } from "./Socket.js";
-import { createTilerTile, log } from "./Functions.js";
+import { createTilerTile, log, moveTokenLocal, tilerTilePlaceables } from "./Functions.js";
 
 /**
  * Manipulates the scene in several ways to stitch smaller scenes together to simulate a much bigger scene
@@ -179,25 +179,27 @@ export class SceneScroller {
                         ]});
                     }
                     break;
-                case "tiles":
-                    for (const placeable of placeables[placeableKey]) {
-                        placeable.position.set(
-                            placeable.data.x + vector.x,
-                            placeable.data.y + vector.y
-                        );
-                        updates[placeableKey].push({_id: placeable.id, x: placeable.data.x, y: placeable.data.y});
-                    }
                 default:
                     for (const placeable of placeables[placeableKey]) {
+                        placeable.position.set(placeable.data.x + vector.x, placeable.data.y + vector.y);
                         placeable.data.x += vector.x;
                         placeable.data.y += vector.y;
                         updates[placeableKey].push({_id: placeable.id, x: placeable.data.x, y: placeable.data.y});
+                        switch(placeableKey) {
+                            case "lights":
+                                placeable.updateSource({defer: true});
+                                break;
+                            case "templates":
+                                placeable.draw();
+                                break;
+                        }
                     }
             }
         }
 
-        // Reposition all door icons
-        const doorIcons = canvas.walls.placeables.filter(w => w.doorControl !== undefined);
+        // Reposition only door icons that belong to the Scene Tiler tile
+        const doorIcons = canvas.walls.placeables.filter(w => w.doorControl !== undefined)
+                                .filter(w => placeables?.walls?.includes(w));
 
         for (let door of doorIcons) {
         const dcPos = door.doorControl.position;
@@ -217,20 +219,35 @@ export class SceneScroller {
      */
     static tokenCreate(...args) {
         const [doc, data, options, userId] = args;
-        // Many checks before stopping the token creation workflow!
-        if ( !this.isScrollerScene(canvas.scene) ) return true;
-        if ( doc.data.flags.hasOwnProperty("SceneScrollerTokenFlags") ) {
-            const actor = game.actors.get(data.actorId);
+        // This workflow is only for scene-scroller scenes.
+        if ( !SceneScroller.isScrollerScene(canvas.scene) ) return true;
+        // If Scene-Scroller hasn't populated flags with needed information for token creation, the stop the workflow and launch UI.
+        if ( !doc.data.flags.hasOwnProperty(ModuleName) ) {
+            new NewTokenTileSelectUI(data, {left: ui.sidebar._element[0].offsetLeft - 300, top: 100}).render(true);
+            return false;
+        }
+
+        if ( doc.data.flags[ModuleName].inTileLoc === null ) {
+            const destTile = canvas.background.get(doc.data.flags[ModuleName].CurrentTile);
+            doc.data.update({"flags.scene-scroller.inTileLoc" : {x: data.x - destTile.position._x, y: data.y - destTile.position._y}});
+            // For tokens belonging to synthetic actors (unlinked tokens)
             if ( !data.actorLink ) {
                 doc.data.actorData.flags = data.flags
             }
-            actor.data.token.update({"flags.-=SceneScrollerTokenFlags" : null});  // not awaited.  Can't anyway because it's called in a hook.
+            // The flags we set on the actor in the dropCanvasData hook are no longer needed.
+            // The update is synchronous... don't need to wait for the promise.
+            const actor = game.actors.get(data.actorId);
+            actor.data.token.update({"flags.-=scene-scroller" : null});
+
+            // update data to place the token at the home position
+            const d = canvas.dimensions;
+            data.x = d.paddingX;
+            data.y = d.paddingY;
+
+            // Allow token creation to continue and finish.
             return true;
         }
         
-        // Launch a formApplication here.
-        new NewTokenTileSelectUI(data, {left: ui.sidebar._element[0].offsetLeft - 300, top: 100}).render(true);
-        return false;
     }
 
     /** This function will activate (make visible) the Scene-Tiler tile entered as a parameter.
@@ -245,6 +262,9 @@ export class SceneScroller {
      *  @return {Boolean}                               - Return true on success.  Return false if the function fails.
      */
     static displaySubScenes(tilerTile, translatePlaceables = true) {
+        // TO-DO: If there's a controlled token, save it, then set it to not controlled.
+        // This will trigger a scene update resetting the scene.
+
         // This is the main Scene Tiler tile:
         const mainTile = canvas.background.get(tilerTile);
         // Get all the linked tiles by the array of ID's saved in main tile flags.  This is an array of UUID's
@@ -295,21 +315,29 @@ export class SceneScroller {
                                     ?.Vector || {x: 0, y: 0};
             const derivedVector = {x: -vector.x - smallestX, y: -vector.y - smallestY}
             k.position.set(k.data.x + derivedVector.x, k.data.y + derivedVector.y);
-            // If required, move all the placeable objects associated with this tile (see Scene-Tiler flags) by the same translation.
-            if ( !translatePlaceables ) continue;
-            const placeablesIds = k.document.getFlag("scene-tiler", "entities");
-            const placeables = {
-                    drawings: placeablesIds?.drawings?.map(d => canvas.drawings.get(d)) || [],
-                    lights: placeablesIds?.lights?.map(l => canvas.lighting.get(l)) || [],
-                    notes: placeablesIds?.notes?.map(n => canvas.notes.get(n)) || [],
-                    sounds: placeablesIds?.sounds?.map(s => canvas.sounds.get(s)) || [],
-                    templates: placeablesIds?.templates?.map(t => canvas.templates.get(t)) || [],
-                    tiles: placeablesIds?.tiles?.map(t => canvas.background.get(t) || canvas.foreground.get(t)) || [],
-                    walls: placeablesIds?.walls?.map(w => canvas.walls.get(w)) || []
-            }
-            this.offsetPlaceables(placeables, {x: derivedVector.x, y: derivedVector.y});
+            k.data.x += derivedVector.x;
+            k.data.y += derivedVector.y;
         }
 
-        // For each token associated with any particular active tile, move the token to the position (relative to tile TLC) saved in the token flags.
+        // TO-DO: For each token associated with any particular active tile, move the token to the position (relative to tile TLC) saved in the token flags.
+        const allTokensArr = canvas.tokens.placeables;
+        for (const token of allTokensArr) {
+            if ( tilerTilesArr.includes(token.data.flags[ModuleName].CurrentTile)) {
+                moveTokenLocal(token);
+            }
+        }
+
+        // If required, move all the placeable objects associated with this tile (see Scene-Tiler flags) by the same translation.
+        if ( !translatePlaceables ) return;
+        for (const tileId of tilerTilesArr) {
+            const tile = canvas.background.get(tileId);
+            const placeablesIds = tile.document.getFlag("scene-tiler", "entities");
+            const placeables = tilerTilePlaceables(placeablesIds);
+            const d = canvas.dimensions;
+            this.offsetPlaceables(placeables, {x: tile.position._x - d.paddingX - d.size, y: tile.position._y - d.paddingY - d.size});
+        }
+
+
+        // TO-DO: If a controlled token was saved, re-enable control.  This will trigger displaySubScenes (again).
     }
 }
