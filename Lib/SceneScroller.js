@@ -289,60 +289,65 @@ export class SceneScroller {
         // This is the main sub-scene:
         const mainTile = canvas.background.get(tilerTile);
         // Get all the linked tiles by the array of ID's saved in main tile flags.  This is an array of UUID's
-        const linkedTileUuidArr = mainTile.document.getFlag('scene-scroller', 'sceneScrollerTilerFlags')
-                                            .LinkedTiles.map(l => l.SceneUUID);
+        const linkedTileUuidArr = mainTile.document.getFlag('scene-scroller', 'LinkedTiles').map(l => l.SceneUUID);
         // Get all the Scene-Tiler tiles in the viewport from scene Flags.  This is an array of tile ID's
-        const tilerTilesArr = canvas.scene.getFlag(ModuleName, "sceneScrollerSceneFlags").SceneTilerTileIDsArray;
+        const tilerTilesArr = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
 
-        // Build a Map with the tileDocument as the Key and object {x: <number>, y: <number>, uuid: <string>} containing x and y coordinates.
-        // The x & y coordinates are the displacement in pixels from the main sub-scene top left corner (TLC) to the linked tile TLC.
-        const tilerTileCoords = new Map();
-        // Begin by entering the data for the mainTile, whose TLC will be the reference point for the vector for all other tiles.
-        tilerTileCoords.set(mainTile, {
-            x: mainTile.data.x, y: mainTile.data.y, uuid: null});
+        // Build an array for X and an array for Y containing the linked tiles top left corners (TLC) after they are translated
+        // by the stored vectors.  The first values are zero, in case the main tile is the left and/or top most tile.
+        const arrX = [0];
+        const arrY = [0];
 
-        // Now iterate for all linkedTiles and add to the map
-        for (const tileId of tilerTilesArr) {
+        // Now iterate for all linkedTiles and add their translated TLC to the arrays.
+        for (const tileUuid of linkedTileUuidArr) {
             // Get the tile document for this tileId
-            const tile = canvas.background.get(tileId);
+            const tile = canvas.background.placeables.filter(t => t.document.getFlag("scene-tiler", "scene") === tileUuid)[0] || false;
+            if ( !tile ) continue;
             // Get the UUID for this tileId
             const Uuid = tile.document.getFlag("scene-tiler", "scene");
-            // Skip any tiles that aren't in the mainTile's linked tile array
-            if ( !linkedTileUuidArr.includes(Uuid) ) continue;
+            // Skip any tiles that aren't in the viewport's sub-scene array
+            if ( !tilerTilesArr.includes(tile.id) ) continue;
 
             // Get the vector associated with this linked tile
             const vector = mainTile.document.getFlag(ModuleName, 'LinkedTiles')
                                     .filter(id => id.SceneUUID === Uuid)[0]
                                     .Vector;
             // Add linked tile to the map with derived coordinates and UUID (for later)
-            tilerTileCoords.set(tile, {
-                x: tile.data.x - (tile.data.x + vector.x), 
-                y: tile.data.y - (tile.data.y + vector.y),
-                uuid: Uuid
-            })
+            arrX.push(-vector.x);
+            arrY.push(-vector.y);
         }
 
-        // Find the smallest X and the smallest Y in the map
-        const testX = Array.from(tilerTileCoords.values()).map(v => {return v.x});
-        const testY = Array.from(tilerTileCoords.values()).map(v => {return v.y});
-        const smallestX = Math.min(...testX);
-        const smallestY = Math.min(...testY);
+        // Find the smallest X and the smallest Y
+        const smallestX = Math.min(...arrX);
+        const smallestY = Math.min(...arrY);
         
-        // Using the smallestX & smallestY along with tilertileCoords map, we can move (locally)
-        // all the tiles to the position they need to be in to fit in the viewport.
-        // The smallest X and smallest Y will be offset to position x = grid and y = grid.
-        // If required, move all the tile placeables by the same translation.
-        for (const [k,v] of tilerTileCoords.entries()) {
+        // The smallest X and smallest Y forms the vector the main tile needs to be translated for all of the
+        // activated tiles to fit in the viewport.  Translate mainTile...
+        mainTile.position.set(mainTile.position._x - smallestX, mainTile.position._y - smallestY);
+        mainTile.data.x -= smallestX;
+        mainTile.data.y -= smallestY;
+        
+        // ... and position each linked tile relative to mainTile's new position, using the stored vectors.
+        for (const tileUuid of linkedTileUuidArr) {
+            // Get the tile document for this tileId
+            const tile = canvas.background.placeables.filter(t => t.document.getFlag("scene-tiler", "scene") === tileUuid)[0] || false;
+            if ( !tile ) continue;
+            // Get the UUID for this tileId
+            const Uuid = tile.document.getFlag("scene-tiler", "scene");
+            // Skip any tiles that aren't in the viewport's sub-scene array
+            if ( !tilerTilesArr.includes(tile.id) ) continue;
+
+            // Get the vector associated with this linked tile
             const vector = mainTile.document.getFlag(ModuleName, 'LinkedTiles')
-                                    .filter(id => id.SceneUUID === v.uuid)[0]
-                                    ?.Vector || {x: 0, y: 0};
-            const derivedVector = {x: -vector.x - smallestX, y: -vector.y - smallestY}
-            k.position.set(k.data.x + derivedVector.x, k.data.y + derivedVector.y);
-            k.data.x += derivedVector.x;
-            k.data.y += derivedVector.y;
+                                    .filter(id => id.SceneUUID === Uuid)[0]
+                                    .Vector;
+            
+            tile.position.set(mainTile.data.x - vector.x, mainTile.data.y - vector.y);
+            tile.data.x = mainTile.data.x + vector.x;
+            tile.data.y = mainTile.data.y + vector.y;
         }
 
-        // TO-DO: For each token associated with any particular active tile, move the token to the position (relative to tile TLC) saved in the token flags.
+        // For each token associated with any particular active tile, move the token to the position (relative to tile TLC) saved in the token flags.
         const allTokensArr = canvas.tokens.placeables;
         for (const token of allTokensArr) {
             if ( tilerTilesArr.includes(token.data.flags[ModuleName].CurrentTile)) {

@@ -117,7 +117,7 @@ export class ScrollerSelectScene extends FormApplication {
   
       // This section gets all the compendium scenes currently active in the main scene.
       // Gather an array of all the Scene Tiler tiles in the scene
-      const sceneTilerTilesIDs = canvas.scene.getFlag(ModuleName, "sceneScrollerSceneFlags").SceneTilerTileIDsArray;
+      const sceneTilerTilesIDs = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
       // For every Scene-Tiler tile, get the UUID as well as the tile ID.
       const sceneTilerTilesUUID = sceneTilerTilesIDs.map(t => {
         return  {  tileId: t,

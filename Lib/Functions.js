@@ -175,7 +175,7 @@ async function largestSceneSize(scn, actvTiles) {
     for (const tileID of actvTiles) {
         // For this tile, get all the possible linked tiles by their UUID's
         const tile = canvas.background.get(tileID);
-        const uuidArray = tile.document.getFlag(ModuleName, "sceneScrollerTilerFlags").LinkedTiles.map(t => t.SceneUUID);
+        const uuidArray = tile.document.getFlag(ModuleName, "LinkedTiles").map(t => t.SceneUUID);
         // Now, get all the tiles in the background and map those that have Scene Tiler flags with scene UUID's in them
         const bgTileUuidArray = canvas.background.placeables.map(t => t.data?.flags["scene-tiler"]?.scene);
         // Now filter uuidArray to only include tiles present in bgTileUuidArray
@@ -188,7 +188,7 @@ async function largestSceneSize(scn, actvTiles) {
         const coordArrayY = [tile.data.y, tile.data.y + tile.height];
         for (const linkedUuid of filteredUuidArray) {
             const linkedTile = canvas.background.placeables.filter(t => t.data.flags["scene-tiler"]?.scene === linkedUuid)[0];
-            const vector = tile.data.flags["scene-scroller"].sceneScrollerTilerFlags.LinkedTiles.filter(l => l.SceneUUID === linkedUuid)[0].Vector;
+            const vector = tile.data.flags["scene-scroller"].LinkedTiles.filter(l => l.SceneUUID === linkedUuid)[0].Vector;
             const derivedTLCCoords = {x: linkedTile.data.x - vector.x, y: tile.data.y - vector.y};
             coordArrayX.push(derivedTLCCoords.x);
             coordArrayY.push(derivedTLCCoords.y);
@@ -277,8 +277,8 @@ export async function createTilerTile(source) {
     let mainSceneFlags = foundry.utils.deepClone(SceneScroller.sceneScrollerSceneFlags);
     const isFlags = canvas.scene.data.flags.hasOwnProperty(ModuleName);
     if ( isFlags ) {
-        for (const [k,v] of Object.entries(mainSceneFlags)) {
-            v = foundry.utils.deepClone(canvas.scene.getFlag(ModuleName, k));
+        for (let [k,v] of Object.entries(mainSceneFlags)) {
+            mainSceneFlags[k] = foundry.utils.deepClone(canvas.scene.getFlag(ModuleName, k));
         }
     }
 
@@ -302,9 +302,9 @@ export async function createTilerTile(source) {
  *  @param {Boolean}        translatePlaceables         - Defaults to true.  (token creation sub-scene preview will not move placeables)
  *  @return {void}  
  */
-export function resetMainScene(translatePlaceables = true) {
+export async function resetMainScene(translatePlaceables = true) {
     // Get ID's for all sub-scenes (Scene Tiler tiles) in the viewport (main Foundry scene).
-    const tilerTilesArr = canvas.scene.getFlag(ModuleName, "sceneScrollerSceneFlags").SceneTilerTileIDsArray;
+    const tilerTilesArr = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
     // Map tilerTilesArr to find only sub-scenes that are not at their home position
     const d = canvas.dimensions;
     const tilesToHomeArr = tilerTilesArr.map(t => {
@@ -387,12 +387,12 @@ export async function preUpdateTokenFlags(token, data, options, id) {
 
     // There is a change representing token movement.  Update the token flags with the new location.
     // Don't alter the changes, to maintain the proper direction for token animation.
-    const destTile = canvas.background.get(token.data.flags[ModuleName].CurrentTile);
+    const destTile = canvas.background.get(token.getFlag(ModuleName, "CurrentTile"));
     const currLoc = token.getFlag(ModuleName, "inTileLoc");
     const newLoc = {};
     newLoc.x = data.hasOwnProperty("x") ? data.x - destTile.position._x : currLoc.x;
     newLoc.y = data.hasOwnProperty("y") ? data.y - destTile.position._y : currLoc.y;
-    await token.data.update({"flags.scene-scroller.inTileLoc" : {x: newLoc.x, y: newLoc.y}});
+    await token.setFlag(ModuleName, "inTileLoc", {x: newLoc.x, y: newLoc.y});
 }
 
 /** This function is called when the token needs to be placed in the viewport relative to its parent sub-scene
@@ -417,11 +417,20 @@ export function moveTokenLocal(token) {
  *  @return {void}
  */
 export async function controlToken(token, isControlled) {
-    // If the token is not at its home position (for whatever reason)
+    // Reset ALL tokens to home position that aren't already there.
     const d = canvas.dimensions;
-    if ( token.data.x !== d.paddingX || token.data.y !== d.paddingY) {
-        await token.document.update({x: d.paddingX, y: d.paddingY}, {animate: false})
+    const tokens = canvas.tokens.placeables.filter(t => t.data.x !== d.paddingX && t.data.y !== d.paddingY);
+    for (const token of tokens) {
+        // If the token was deleted, the database won't find it...
+        try {
+            await token.document.update({x: d.paddingX, y: d.paddingY}, {animate: false})
+        }
+        catch(err) {
+            log(false, "Token position update error.  If the token wasn't deleted, enable debugging for error message.");
+            log(false, err);
+        }
     }
+
     // If the token is being released
     if ( !isControlled ) {
         canvas.tokens.concludeAnimation();
