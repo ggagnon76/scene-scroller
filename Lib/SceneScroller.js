@@ -1,7 +1,7 @@
  import { ModuleName } from "../ss-initialize.js";
 import { ScrollerSelectScene, NewTokenTileSelectUI } from "./Forms.js";
 import { socketWrapper, msgDict } from "./Socket.js";
-import { createTilerTile, log, moveTokenLocal, tilerTilePlaceables } from "./Functions.js";
+import { createTilerTile, getAllPlaceables, isVisiblePlaceables, log, moveTokenLocal, tilerTilePlaceables } from "./Functions.js";
 
 /**
  * Manipulates the scene in several ways to stitch smaller scenes together to simulate a much bigger scene
@@ -70,6 +70,12 @@ export class SceneScroller {
      */
     static PreventCanvasDraw = false;
 
+    /** A variable to store a token object that needs to be updated after an animation
+     *  See token_animate() in Wrap.js
+     *  @param {Object|Null}    
+     */
+    static updateToken = null;
+
     /**
      * A Method to identify if the main Foundry scene is being used as a Scene Scroller Scene (the viewport).
      * It does this by looking for a flag that is set when Scene Scroller is activated.
@@ -83,8 +89,28 @@ export class SceneScroller {
         return false;
     }
 
+    /** A method activated by a 'ready' hook.  See ss-initialize.js
+     *  This method will:
+     *    - change the visibility of all placeables in the scene to false.
+     *    - create alpha maps for every sub-scene (Scene-Tiler tile).
+     *    - launch a token selector bar for any user that can select tokens to control
+     *  @return {void}
+    */
+   static onReady(...args) {
+
+        if( !SceneScroller.isScrollerScene(canvas.scene) ) return;
+
+        isVisiblePlaceables(getAllPlaceables(), false);
+
+        const subScenes = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
+        for (const tileId of subScenes) {
+            const tile = canvas.background.get(tileId);
+            tile._createAlphaMap({keepPixels: true});
+        }
+   }
+
     /**
-     * A Method activated by the GM via a UI button to establish (a hopefully empty scene) as a Scene Scroller Scene.
+     * A method activated by the GM via a UI button to establish (a hopefully empty scene) as a Scene Scroller Scene.
      *  - The method will add sceneScrollerSceneFlags to the scene flags, and
      *  - The method will launch a form application to prompt the GM to choose an origin scene from a scene compendium
      *    See ScrollerSelectScene in Forms.js
@@ -186,10 +212,19 @@ export class SceneScroller {
             switch(placeableKey) {
                 case "walls":
                     for (const placeable of placeables[placeableKey]) {
+                        const position = placeable.center;
+                        placeable.position.set(position.x + vector.x, position.y + vector.y);
                         placeable.data.c[0] += vector.x;
                         placeable.data.c[2] += vector.x;
                         placeable.data.c[1] += vector.y;
                         placeable.data.c[3] += vector.y;
+                        placeable.data._source.c[0] += vector.x;
+                        placeable.data._source.c[2] += vector.x;
+                        placeable.data._source.c[1] += vector.y;
+                        placeable.data._source.c[3] += vector.y;
+
+                        placeable._onModifyWall(true);
+                        
                         updates[placeableKey].push({_id: placeable.id, c: [
                             placeable.data.c[0],
                             placeable.data.c[1],
@@ -198,14 +233,7 @@ export class SceneScroller {
                         ]});
                     }
 
-                    // Reposition only door icons that belong to the Scene Tiler tile
-                    const doorIcons = canvas.walls.placeables.filter(w => w.doorControl !== undefined)
-                                                            .filter(w => placeables?.walls?.includes(w));
-
-                    for (let door of doorIcons) {
-                        const dcPos = door.doorControl.position;
-                        door.doorControl.position.set(dcPos.x + vector.x, dcPos.y + vector.y);
-                    }
+                    // Refresh door icons
                     break;
                 default:
                     for (const placeable of placeables[placeableKey]) {
@@ -278,18 +306,18 @@ export class SceneScroller {
      *  -Tokens that are associated with the activated sub-scene will be activated (visible) and be moved (locally) to their correct
      *   position relative to their associated sub-scene.
      * 
-     *  @param {String}         tilerTile               - The tile ID for the 'main' sub-scene.
+     *  @param {String}         tilerTileId             - The tile ID for the 'main' sub-scene.
      *  @param {Boolean}        translatePlaceables     - Optional boolean parameter to indicate if transfering placeables is required.  Defaults to true.
      *  @return {Boolean}                               - Return true on success.  Return false if the function fails.
      */
-    static displaySubScenes(tilerTile, translatePlaceables = true) {
+    static displaySubScenes(tilerTileId, translatePlaceables = true) {
         // TO-DO: If there's a controlled token, save it, then set it to not controlled.
         // This will trigger a viewport update resetting the viewport.
 
         // This is the main sub-scene:
-        const mainTile = canvas.background.get(tilerTile);
+        const mainTile = canvas.background.get(tilerTileId);
         // Get all the linked tiles by the array of ID's saved in main tile flags.  This is an array of UUID's
-        const linkedTileUuidArr = mainTile.document.getFlag('scene-scroller', 'LinkedTiles').map(l => l.SceneUUID);
+        const linkedTileUuidArr = mainTile.document.getFlag(ModuleName, 'LinkedTiles').map(l => l.SceneUUID);
         // Get all the Scene-Tiler tiles in the viewport from scene Flags.  This is an array of tile ID's
         const tilerTilesArr = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
 
@@ -326,6 +354,7 @@ export class SceneScroller {
         mainTile.position.set(mainTile.position._x - smallestX, mainTile.position._y - smallestY);
         mainTile.data.x -= smallestX;
         mainTile.data.y -= smallestY;
+        mainTile.visible = true;
         
         // ... and position each linked tile relative to mainTile's new position, using the stored vectors.
         for (const tileUuid of linkedTileUuidArr) {
@@ -345,24 +374,27 @@ export class SceneScroller {
             tile.position.set(mainTile.data.x - vector.x, mainTile.data.y - vector.y);
             tile.data.x = mainTile.data.x + vector.x;
             tile.data.y = mainTile.data.y + vector.y;
+            tile.visible = true;
         }
 
         // For each token associated with any particular active tile, move the token to the position (relative to tile TLC) saved in the token flags.
         const allTokensArr = canvas.tokens.placeables;
         for (const token of allTokensArr) {
-            if ( tilerTilesArr.includes(token.data.flags[ModuleName].CurrentTile)) {
-                moveTokenLocal(token);
-            }
+            const tokenTileId = token.document.getFlag(ModuleName, "CurrentTile");
+            const tile = canvas.background.get(tokenTileId);
+            if ( tile.visible === true ) moveTokenLocal(token);
         }
 
         // If required, move all the placeable objects associated with this tile (see Scene-Tiler flags) by the same translation.
         if ( !translatePlaceables ) return;
         for (const tileId of tilerTilesArr) {
             const tile = canvas.background.get(tileId);
+            if ( tile.visible === false ) continue; 
             const placeablesIds = tile.document.getFlag("scene-tiler", "entities");
             const placeables = tilerTilePlaceables(placeablesIds);
             const d = canvas.dimensions;
             this.offsetPlaceables(placeables, {x: tile.position._x - d.paddingX - d.size, y: tile.position._y - d.paddingY - d.size});
+            isVisiblePlaceables(placeables, true);
         }
 
 

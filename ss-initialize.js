@@ -1,7 +1,7 @@
 import { message_handler, socketWrapper, msgDict } from "./lib/Socket.js";
 import { SceneScroller } from "./lib/SceneScroller.js";
 import * as wrapper from "./lib/Wrap.js"
-import { controlToken, preUpdateTokenFlags } from "./lib/Functions.js"
+import { controlToken, preUpdateTokenFlags, updateTokenAfterMovement } from "./lib/Functions.js"
 
 // Boolean to be used for any entry function that will launch Scene Scroller methods or functions.
 // If isReady is false (not ready), then the module should offer not functionality at all.
@@ -22,6 +22,8 @@ export const SocketModuleName = "module." + ModuleName
 Hooks.once('init', () => {
     wrapper.scene_onupdate();
     wrapper.actordirectory_ondragstart();
+    wrapper.myTestWallInclusion();
+    wrapper.updateToken();
 })
 
 /** Hook once on 'READY' to initialize the following:
@@ -39,9 +41,13 @@ Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
     registerPackageDebugFlag(ModuleName);
 });
 
+// Prepare scene-scroller scene
+Hooks.on('ready', SceneScroller.onReady);
 // Token creation workflow
 Hooks.on('preCreateToken', SceneScroller.tokenCreate);
 // Viewport management workflow
 Hooks.on('controlToken', controlToken);
 // Token movement workflow
 Hooks.on('preUpdateToken', preUpdateTokenFlags);
+// Sub-scene update workflow
+Hooks.on('updateToken', updateTokenAfterMovement);

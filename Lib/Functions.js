@@ -13,7 +13,7 @@ export function log(force, ...args) {
     const isDebugging = game.modules.get('_dev-mode')?.api?.getPackageDebugValue(ModuleName);
 
     if ( isDebugging ) {
-        console.log(ModuleTitle,  " debugging | ", ...args);
+        console.log(ModuleTitle,  "debugging | ", ...args);
     } else if ( force ) {
         console.log(ModuleTitle, " | ", ...args)
     }
@@ -129,16 +129,7 @@ async function resizeScene(size) {
     // Pan the view to make it look like the scene background moves, not the content.
     socketWrapper(msgDict.vectorPanScene, vector);
 
-    const placeables = {
-        drawings: canvas.drawings.placeables,
-        lights: canvas.lighting.placeables,
-        notes: canvas.notes.placeables,
-        sounds: canvas.sounds.placeables,
-        templates: canvas.templates.placeables,
-        tiles: [...canvas.background.placeables, ...canvas.foreground.placeables],
-        tokens: canvas.tokens.placeables,
-        walls: canvas.walls.placeables
-    };
+    const placeables = getPlaceables();
 
     // Move all the placeables and save for all clients.
     socketWrapper(msgDict.translatePlaceables, {placeables: placeables, vector: vector, save: true});
@@ -302,7 +293,7 @@ export async function createTilerTile(source) {
  *  @param {Boolean}        translatePlaceables         - Defaults to true.  (token creation sub-scene preview will not move placeables)
  *  @return {void}  
  */
-export async function resetMainScene(translatePlaceables = true) {
+export function resetMainScene(translatePlaceables = true) {
     // Get ID's for all sub-scenes (Scene Tiler tiles) in the viewport (main Foundry scene).
     const tilerTilesArr = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
     // Map tilerTilesArr to find only sub-scenes that are not at their home position
@@ -323,7 +314,11 @@ export async function resetMainScene(translatePlaceables = true) {
         tile.position.set(d.paddingX + d.size, d.paddingY + d.size);
         tile.data.x = d.paddingX + d.size;
         tile.data.y = d.paddingY + d.size;
-        if ( translatePlaceables ) SceneScroller.offsetPlaceables(placeables, vector);
+        tile.visible = false;
+        if ( translatePlaceables ) {
+            SceneScroller.offsetPlaceables(placeables, vector);
+            isVisiblePlaceables(placeables, false);
+        }
     }
 
     // All tokens should also be at their home position
@@ -440,4 +435,81 @@ export async function controlToken(token, isControlled) {
     // If the token is being controlled.
     const destTile = token.data.flags[ModuleName].CurrentTile;
     SceneScroller.displaySubScenes(destTile);
+}
+
+export function getAllPlaceables() {
+    return {
+        drawings: canvas.drawings.placeables,
+        lights: canvas.lighting.placeables,
+        notes: canvas.notes.placeables,
+        sounds: canvas.sounds.placeables,
+        templates: canvas.templates.placeables,
+        tiles: [...canvas.background.placeables, ...canvas.foreground.placeables],
+        tokens: canvas.tokens.placeables,
+        walls: canvas.walls.placeables
+    };
+}
+
+export function isVisiblePlaceables(placeables, bool) {
+    for (const [placeableName, placeablesArr] of Object.entries(placeables)) {
+        for (const placeable of placeablesArr) {
+            placeable.visible = bool;
+            switch(placeableName) {
+                case "lights" :
+                    placeable.data.hidden = !bool;
+                    placeable.updateSource({defer: true});
+                    break;
+                case "templates":
+                    canvas.grid.highlightLayers[`Template.${placeable.id}`].visible = bool;
+                    break;
+            }
+        }
+    }
+}
+
+export async function updateTokenAfterMovement(tokenDoc, data, options, id) {
+    
+    if ( !SceneScroller.isScrollerScene(canvas.scene) ) return;
+    // Only interested in token movement.
+    if ( !data.hasOwnProperty("x") && !data.hasOwnProperty("y")) return;
+    // If the change is to update the token to the home position, allow this.
+    const d = canvas.dimensions;
+    if ( data.x === d.paddingX && data.y === d.paddingY) return;
+
+    const onTileId = tokenDoc.getFlag(ModuleName, "CurrentTile");
+    const onTile = canvas.background.get(onTileId);
+    let displayTileId = "";
+
+    // Get the sub-scene (Scene Tiler tile) ID's from scene flags
+    const subSceneIds = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
+    // filter out all sub-scenes the token is not occupying
+    const subScenesContainToken = subSceneIds.map(id => {
+                return canvas.background.get(id);
+            })
+            .filter(tile => tile.visible === true)      // remove tiles that are disabled (visible = false)
+            .filter(tile =>                             // remove all tiles the token is not contained within
+                tokenDoc.data.x >= tile.position._x &&
+                tokenDoc.data.y >= tile.position._y &&
+                tile.position._x + tile.data.width >= tokenDoc.data.x &&
+                tile.position._y + tile.data.height >= tokenDoc.data.y 
+            )
+    if ( subScenesContainToken.length === 1 && subScenesContainToken[0].id === onTile.id ) return;  // The only tile in the array is the one already in token flags.  No need to proceed.
+    log(false, "The array of NEW sub-scenes (Scene Tiler tiles) the token occupies: ", subScenesContainToken)
+
+    // If there's only one tile in the array and it's not the one currently in token flags, then update token flags to indicate this tile.
+    if ( subScenesContainToken.length === 1) {
+        await tokenDoc.setFlag(ModuleName, "CurrentTile", subScenesContainToken[0].id);
+        const newLoc = {
+            x: tokenDoc.data.x - subScenesContainToken[0].position._x,
+            y: tokenDoc.data.y - subScenesContainToken[0].position._y
+        }
+        await tokenDoc.setFlag(ModuleName, "inTileLoc", newLoc)
+        displayTileId = subScenesContainToken[0].id;
+    }
+    // If there's more than one tile in the array, then figure out which one the token occupies using the alpha maps of each tile.
+    else {
+        ui.notifications.info("Which tile is the token occupying!!?");
+    }
+
+    SceneScroller.updateToken = displayTileId;
 }
