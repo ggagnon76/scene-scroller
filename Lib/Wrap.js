@@ -78,5 +78,5 @@ export function updateToken() {
             SceneScroller.displaySubScenes(SceneScroller.updateToken);
             SceneScroller.updateToken = null;
         })
-    })
+    }, 'WRAPPER')
 }

@@ -1,7 +1,7 @@
-import { message_handler, socketWrapper, msgDict } from "./lib/Socket.js";
+import { message_handler } from "./lib/Socket.js";
 import { SceneScroller } from "./lib/SceneScroller.js";
 import * as wrapper from "./lib/Wrap.js"
-import { controlToken, preUpdateTokenFlags, updateTokenAfterMovement } from "./lib/Functions.js"
+import { controlToken, preUpdateTokenFlags } from "./lib/Functions.js"
 
 // Boolean to be used for any entry function that will launch Scene Scroller methods or functions.
 // If isReady is false (not ready), then the module should offer not functionality at all.
@@ -50,4 +50,4 @@ Hooks.on('controlToken', controlToken);
 // Token movement workflow
 Hooks.on('preUpdateToken', preUpdateTokenFlags);
 // Sub-scene update workflow
-Hooks.on('updateToken', updateTokenAfterMovement);
+//Hooks.on('updateToken', updateTokenAfterMovement);

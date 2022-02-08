@@ -380,10 +380,26 @@ export async function preUpdateTokenFlags(token, data, options, id) {
     const d = canvas.dimensions;
     if ( data.x === d.paddingX && data.y === d.paddingY) return;
 
-    // There is a change representing token movement.  Update the token flags with the new location.
-    // Don't alter the changes, to maintain the proper direction for token animation.
-    const destTile = canvas.background.get(token.getFlag(ModuleName, "CurrentTile"));
+    // There is a change representing token movement.
+    // If the token will finish in a new sub-scene (scene-tiler tile), execute a different set of updates:
     const currLoc = token.getFlag(ModuleName, "inTileLoc");
+    const dest = {
+        x: data.hasOwnProperty("x") ? data.x : token.data.x,
+        y: data.hasOwnProperty("y") ? data.y : token.data.y
+    }
+    const isNewEndTile = isEndNewTile(token, dest);
+    if ( isNewEndTile ) {
+        Hooks.once('preTokenAnimate', (token, data) => {
+            data.ontick = (dt, anim) => {
+                token._onMovementFrame(dt, anim, data.config);
+                newTile_UpdateFlags(token, isNewEndTile);
+            }
+        })
+    }
+
+    // The token will end the movement in the same sub-scene.  Update the token flags with the new location.
+    // Don't alter the changes in the hook, to maintain the proper direction for token animation.
+    const destTile = canvas.background.get(token.getFlag(ModuleName, "CurrentTile"));
     const newLoc = {};
     newLoc.x = data.hasOwnProperty("x") ? data.x - destTile.position._x : currLoc.x;
     newLoc.y = data.hasOwnProperty("y") ? data.y - destTile.position._y : currLoc.y;
@@ -467,37 +483,80 @@ export function isVisiblePlaceables(placeables, bool) {
     }
 }
 
-export async function updateTokenAfterMovement(tokenDoc, data, options, id) {
-    
-    if ( !SceneScroller.isScrollerScene(canvas.scene) ) return;
-    // Only interested in token movement.
-    if ( !data.hasOwnProperty("x") && !data.hasOwnProperty("y")) return;
-    // If the change is to update the token to the home position, allow this.
-    const d = canvas.dimensions;
-    if ( data.x === d.paddingX && data.y === d.paddingY) return;
+function isEndNewTile(token, destination) {
 
-    const onTileId = tokenDoc.getFlag(ModuleName, "CurrentTile");
+    const onTileId = token.getFlag(ModuleName, "CurrentTile");
     const onTile = canvas.background.get(onTileId);
-    let displayTileId = "";
 
     // Get the sub-scene (Scene Tiler tile) ID's from scene flags
     const subSceneIds = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
-    // filter out all sub-scenes the token is not occupying
+    // filter out all sub-scenes the token will not be occupying
     const subScenesContainToken = subSceneIds.map(id => {
                 return canvas.background.get(id);
             })
             .filter(tile => tile.visible === true)      // remove tiles that are disabled (visible = false)
             .filter(tile =>                             // remove all tiles the token is not contained within
-                tokenDoc.data.x >= tile.position._x &&
-                tokenDoc.data.y >= tile.position._y &&
-                tile.position._x + tile.data.width >= tokenDoc.data.x &&
-                tile.position._y + tile.data.height >= tokenDoc.data.y 
+                destination.x >= tile.position._x &&
+                destination.y >= tile.position._y &&
+                tile.position._x + tile.data.width >= destination.x &&
+                tile.position._y + tile.data.height >= destination.y 
             )
-    if ( subScenesContainToken.length === 1 && subScenesContainToken[0].id === onTile.id ) return;  // The only tile in the array is the one already in token flags.  No need to proceed.
-    log(false, "The array of NEW sub-scenes (Scene Tiler tiles) the token occupies: ", subScenesContainToken)
+    if ( !subScenesContainToken.length ) return false;
+    if ( subScenesContainToken.length === 1 && subScenesContainToken[0].id === onTile.id ) return false;  // The only tile in the array is the one already in token flags.  No need to proceed.
 
-    // If there's only one tile in the array and it's not the one currently in token flags, then update token flags to indicate this tile.
-    if ( subScenesContainToken.length === 1) {
+    // If there's one or more tiles in the array and it's not the one currently in token flags
+    ui.notifications.info("New Tile!");
+    return subScenesContainToken
+}
+
+const debounceTileFlagUpdate = foundry.utils.debounce(async (tile, token) => {
+    await token.document.setFlag(ModuleName, "CurrentTile", tile.id);
+    const newLoc = {
+        x: token.data.x - tile.position._x,
+        y: token.data.y - tile.position._y
+    }
+    await token.document.setFlag(ModuleName, "inTileLoc", newLoc)
+    resetMainScene();
+    SceneScroller.displaySubScenes(tile.id);
+    ui.notifications.info("Debounce triggered.")
+}, 1000);
+
+function newTile_UpdateFlags(token, tiles) {
+    const currTileId = token.document.getFlag(ModuleName, "CurrentTile");
+    const currTile = canvas.background.get(currTileId);
+
+    for (const tile of tiles) {
+        if ( tile === currTile) continue;
+
+        // Normalize to Tile coordinates
+        let x = token.center.x - tile.position._x;
+        let y = token.center.y - tile.position._y;
+
+        // Account for tile rotation
+        if ( tile.data.rotation !== 0 ) {
+            const anchor = {x: tile.tile.anchor.x * tile.data.width, y: tile.tile.anchor.y * tile.data.height};
+            let r = new Ray(anchor, {x, y});
+            r = r.shiftAngle(-tile.tile.rotation);
+            x = r.B.x;
+            y = r.B.y;
+        }
+
+        // First test against the bounding box
+        if ( (x < tile._alphaMap.minX) || (x > tile._alphaMap.maxX) ) continue;
+        if ( (y < tile._alphaMap.minY) || (y > tile._alphaMap.maxY) ) continue;
+
+        // Next test a specific pixel
+        const px = (Math.round(y) * Math.round(Math.abs(tile.data.width))) + Math.round(x);
+        const isNewTile =  tile._alphaMap.pixels[px] === 1;
+
+        if ( isNewTile ) {
+            debounceTileFlagUpdate(tile, token);
+        }
+    }
+}
+
+/**
+ * if ( subScenesContainToken.length === 1) {
         await tokenDoc.setFlag(ModuleName, "CurrentTile", subScenesContainToken[0].id);
         const newLoc = {
             x: tokenDoc.data.x - subScenesContainToken[0].position._x,
@@ -512,4 +571,4 @@ export async function updateTokenAfterMovement(tokenDoc, data, options, id) {
     }
 
     SceneScroller.updateToken = displayTileId;
-}
+ */

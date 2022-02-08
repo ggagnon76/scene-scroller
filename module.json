@@ -16,7 +16,8 @@
   ],
   "dependencies": [
     {"name": "scene-tiler"},
-    {"name": "lib-wrapper"}
+    {"name": "lib-wrapper"},
+    {"name": "hooking-tokens"}
   ],
   "conflicts": [
     

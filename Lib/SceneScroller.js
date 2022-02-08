@@ -93,7 +93,7 @@ export class SceneScroller {
      *  This method will:
      *    - change the visibility of all placeables in the scene to false.
      *    - create alpha maps for every sub-scene (Scene-Tiler tile).
-     *    - launch a token selector bar for any user that can select tokens to control
+     *    - TO-DO: launch a token selector bar for any user that can select tokens to control
      *  @return {void}
     */
    static onReady(...args) {
