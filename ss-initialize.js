@@ -24,6 +24,7 @@ Hooks.once('init', () => {
     wrapper.actordirectory_ondragstart();
     wrapper.myTestWallInclusion();
     wrapper.updateToken();
+    wrapper.isDoorVisible();
 })
 
 /** Hook once on 'READY' to initialize the following:
@@ -49,5 +50,3 @@ Hooks.on('preCreateToken', SceneScroller.tokenCreate);
 Hooks.on('controlToken', controlToken);
 // Token movement workflow
 Hooks.on('preUpdateToken', preUpdateTokenFlags);
-// Sub-scene update workflow
-//Hooks.on('updateToken', updateTokenAfterMovement);

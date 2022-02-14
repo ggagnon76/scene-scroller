@@ -53,12 +53,16 @@ export async function deleteTilerTile(tile) {
  *  Has to be executed on GM client and player clients via socket.
  *  @param {Object}         size        - the new scene size, format: {width: <Number>, height: <Number>}
  *  @return {void}
- * 
- *  THERE'S A BUG IN THIS FUNCTION.  SOMETIMES THE hitArea DOESN'T SEEM TO BE SET PROPERLY...?
  */
-export function refreshSceneAfterResize(size) {
+export async function refreshSceneAfterResize(size) {
 
     const d = canvas.dimensions;
+    const oldData = {
+        paddingX: d.paddingX,
+        paddingY: d.paddingY,
+        width: d.width,
+        height: d.height
+    }
 
     canvas.dimensions = canvas.constructor.getDimensions({
         width: size.width + 2 * d.size,
@@ -70,9 +74,30 @@ export function refreshSceneAfterResize(size) {
         shiftY: d.shiftY,
         grid: canvas.scene.data.grid
     });
-    canvas.stage.hitArea = new PIXI.Rectangle(0, 0, canvas.dimensions.width, canvas.dimensions.height);
+
+    const deltaPadding = {
+        x: canvas.dimensions.paddingX - oldData.paddingX,
+        y: canvas.dimensions.paddingY - oldData.paddingY
+    }
+
+    // Update the location of placeables to account for any delta in paddingX & paddingY
+    const placeables = getAllPlaceables();
+    SceneScroller.offsetPlaceables(placeables, deltaPadding, {save: true, wallHome: true})
+
+    canvas.stage.hitArea = canvas.dimensions.rect;
+    canvas.templates.hitArea = canvas.dimensions.rect;
+    await canvas.lighting.tearDown();
+    await canvas.lighting.draw();
+    canvas.perception.initialize();
+    canvas.sight.hitArea = canvas.dimensions.rect;
+    canvas.tokens.hitArea = canvas.dimensions.rect;
+
+
+    canvas.grid.draw();
     canvas.background.drawOutline(canvas.outline);
     canvas.msk.clear().beginFill(0xFFFFFF, 1.0).drawShape(canvas.dimensions.rect).endFill();
+    canvas.primary.mask = canvas.msk;
+    canvas.effects.mask = canvas.msk;
 }
 
 /** This function pans the scene by the same amount as the input vector
@@ -102,9 +127,6 @@ async function resizeScene(size) {
 
     const d = canvas.dimensions;
 
-    // Will need to know the size of the padding pre-update, to move all placeables post-update.
-    const prePadding = {x: d.paddingX, y: d.paddingY};
-
     // This update should not trigger a canvas.draw()
     socketWrapper("preventCanvasDrawTrue");
 
@@ -112,27 +134,6 @@ async function resizeScene(size) {
 
     // Update the underlying data since we're preventing a canvas#draw()
     socketWrapper("refreshAfterResize", size)
-
-    // Now move all placeables by a to-be-determined vector
-    const postPadding = {
-        x: canvas.dimensions.paddingX,
-        y: canvas.dimensions.paddingY
-    }
-
-    const vector = {
-        x: postPadding.x - prePadding.x,
-        y: postPadding.y - prePadding.y
-    }
-
-    if (vector.x === 0 && vector.y === 0) return;
-
-    // Pan the view to make it look like the scene background moves, not the content.
-    socketWrapper(msgDict.vectorPanScene, vector);
-
-    const placeables = getPlaceables();
-
-    // Move all the placeables and save for all clients.
-    socketWrapper(msgDict.translatePlaceables, {placeables: placeables, vector: vector, save: true});
 }
 
 /**
@@ -300,7 +301,7 @@ export function resetMainScene(translatePlaceables = true) {
     const d = canvas.dimensions;
     const tilesToHomeArr = tilerTilesArr.map(t => {
         const tile = canvas.background.get(t);
-        if ( tile.position._x !== d.size + d.paddingX || tile.position._y !== d.size + d.paddingY ) return tile
+        if ( tile.visible === true ) return tile
     }).filter(t => t !== undefined);
 
     // Gather arrays of placeable IDs, then move everything by a derived vector.
@@ -316,7 +317,7 @@ export function resetMainScene(translatePlaceables = true) {
         tile.data.y = d.paddingY + d.size;
         tile.visible = false;
         if ( translatePlaceables ) {
-            SceneScroller.offsetPlaceables(placeables, vector);
+            SceneScroller.offsetPlaceables(placeables, vector, {wallHome: true});
             isVisiblePlaceables(placeables, false);
         }
     }
@@ -414,8 +415,9 @@ export function moveTokenLocal(token) {
     const tile = canvas.background.get(token.data.flags[ModuleName].CurrentTile);
     const tileOffset = token.data.flags[ModuleName].inTileLoc;
     token.position.set(tile.position._x + tileOffset.x, tile.position._y + tileOffset.y);
-    token.data.x = tile.position._x + tileOffset.x;
-    token.data.y = tile.position._y + tileOffset.y;
+    token.data.x = token.data._source.x = tile.position._x + tileOffset.x;
+    token.data.y = token.data._source.y = tile.position._y + tileOffset.y;
+    token.visible = true;
 }
 
 /** This function is called by the 'controlToken' hook.  See ss-initialize.js
@@ -554,21 +556,3 @@ function newTile_UpdateFlags(token, tiles) {
         }
     }
 }
-
-/**
- * if ( subScenesContainToken.length === 1) {
-        await tokenDoc.setFlag(ModuleName, "CurrentTile", subScenesContainToken[0].id);
-        const newLoc = {
-            x: tokenDoc.data.x - subScenesContainToken[0].position._x,
-            y: tokenDoc.data.y - subScenesContainToken[0].position._y
-        }
-        await tokenDoc.setFlag(ModuleName, "inTileLoc", newLoc)
-        displayTileId = subScenesContainToken[0].id;
-    }
-    // If there's more than one tile in the array, then figure out which one the token occupies using the alpha maps of each tile.
-    else {
-        ui.notifications.info("Which tile is the token occupying!!?");
-    }
-
-    SceneScroller.updateToken = displayTileId;
- */

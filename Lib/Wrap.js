@@ -65,12 +65,14 @@ export function myTestWallInclusion(wall) {
     }
 
     libWrapper.register(ModuleName, 'ClockwiseSweepPolygon.testWallInclusion', function isWallFiltered(wrapped, ...args) {
+        if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
         return wrapped(...args) && testWall(args[0])
     }, 'WRAPPER');
 }
 
 export function updateToken() {
     libWrapper.register(ModuleName, 'Token.prototype.animateMovement', function myAnimateMovement(wrapped, ...args) {
+        if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
         return wrapped(...args).then(() => {
             if ( SceneScroller.updateToken === null) return;
             log(false, "Token has transfered sub-scenes and viewport will update.")
@@ -78,5 +80,15 @@ export function updateToken() {
             SceneScroller.displaySubScenes(SceneScroller.updateToken);
             SceneScroller.updateToken = null;
         })
+    }, 'WRAPPER')
+}
+
+export function isDoorVisible() {
+    libWrapper.register(ModuleName, 'DoorControl.prototype.isVisible', function myDoorIsVisible(wrapped, ...args) {
+        if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
+        const isVisible = wrapped(...args);
+        const isVisibleTiles = canvas.background.placeables.filter(t => t.visible === true);
+        if ( !isVisibleTiles.length ) return false;
+        return isVisible
     }, 'WRAPPER')
 }
