@@ -1,6 +1,6 @@
 import { ModuleName, ModuleTitle } from "../ss-initialize.js";
 import { SceneScroller } from "./SceneScroller.js";
-import { msgDict, socketWrapper } from "./Socket.js";
+import { socketWrapper } from "./Socket.js";
 
 /** A wrapper function that works with the Foundryvtt-devMode module to output debugging info
  *  to the console.log, when a debugging boolean is activated in module settings.
@@ -13,7 +13,7 @@ export function log(force, ...args) {
     const isDebugging = game.modules.get('_dev-mode')?.api?.getPackageDebugValue(ModuleName);
 
     if ( isDebugging ) {
-        console.log(ModuleTitle,  "debugging | ", ...args);
+        console.log(ModuleTitle,  "DEBUG | ", ...args);
     } else if ( force ) {
         console.log(ModuleTitle, " | ", ...args)
     }
@@ -25,6 +25,7 @@ export function log(force, ...args) {
  * @returns {object}        - SceneDocument?
  */
  export async function getSource(pack, scene) {
+    log(false, "Executing 'getSource' function.");
     const compndm = game.packs.filter(p => p.title === pack)[0];
     const clctn = compndm.collection;
     const scn_id = compndm.index.getName(scene)._id;
@@ -39,6 +40,8 @@ export function log(force, ...args) {
  * @return {void}
  */
 export async function deleteTilerTile(tile) {
+
+    log(false, "Executing 'deleteTilerTile' function.");
 
     if (!game.user.isGM) {
         log(false, "A non-GM user triggered the deleteTilerTile() function.");
@@ -56,6 +59,8 @@ export async function deleteTilerTile(tile) {
  */
 export async function refreshSceneAfterResize(size) {
 
+    log(false, "Executing 'refreshSceneAfterResize' function.");
+
     const d = canvas.dimensions;
     const oldData = {
         paddingX: d.paddingX,
@@ -65,8 +70,8 @@ export async function refreshSceneAfterResize(size) {
     }
 
     canvas.dimensions = canvas.constructor.getDimensions({
-        width: size.width + 2 * d.size,
-        height: size.height + 2 * d.size,
+        width: size.width,
+        height: size.height,
         size: d.size,
         gridDistance: d.distance,
         padding: canvas.scene.data.padding,
@@ -81,8 +86,7 @@ export async function refreshSceneAfterResize(size) {
     }
 
     // Update the location of placeables to account for any delta in paddingX & paddingY
-    const placeables = getAllPlaceables();
-    SceneScroller.offsetPlaceables(placeables, deltaPadding, {save: true, wallHome: true})
+    SceneScroller.offsetPlaceables(getAllPlaceables(), deltaPadding, {save: true, wallHome: true})
 
     canvas.stage.hitArea = canvas.dimensions.rect;
     canvas.templates.hitArea = canvas.dimensions.rect;
@@ -106,6 +110,9 @@ export async function refreshSceneAfterResize(size) {
  *  @return {void}
  */
 export async function vectorPan(vector) {
+
+    log(false, "Executing 'vectorPan' function.");
+
     await canvas.pan( {
         x: canvas.stage.pivot.x + vector.x,
         y: canvas.stage.pivot.y + vector.y
@@ -120,6 +127,8 @@ export async function vectorPan(vector) {
  */
 async function resizeScene(size) {
 
+    log(false, "Executing 'resizeScene' function.");
+
     if (!game.user.isGM) {
         log(false, "A non-GM user triggered the resizeScene() function.");
         return false;
@@ -130,7 +139,7 @@ async function resizeScene(size) {
     // This update should not trigger a canvas.draw()
     socketWrapper("preventCanvasDrawTrue");
 
-    await canvas.scene.update({width: size.width + 2 * d.size, height: size.height + 2 * d.size});
+    await canvas.scene.update({width: size.width, height: size.height});
 
     // Update the underlying data since we're preventing a canvas#draw()
     socketWrapper("refreshAfterResize", size)
@@ -144,12 +153,14 @@ async function resizeScene(size) {
  */
 async function largestSceneSize(scn, actvTiles) {
 
+    log(false, "Executing 'largestSceneSize' function.");
+
     if (!game.user.isGM) {
         log(false, "A non-GM user triggered the largestSceneSize() function.");
         return false;
     }
 
-    if (!scn instanceof Scene) {
+    if (!(scn instanceof Scene)) {
         log(false, "Scene argument passed to largestSceneSize function is not a scene object");
         log(false, scn)
         return false;
@@ -169,7 +180,9 @@ async function largestSceneSize(scn, actvTiles) {
         const tile = canvas.background.get(tileID);
         const uuidArray = tile.document.getFlag(ModuleName, "LinkedTiles").map(t => t.SceneUUID);
         // Now, get all the tiles in the background and map those that have Scene Tiler flags with scene UUID's in them
-        const bgTileUuidArray = canvas.background.placeables.map(t => t.data?.flags["scene-tiler"]?.scene);
+        const bgTileUuidArray = canvas.background.placeables
+                .map(t => t.data?.flags["scene-tiler"]?.scene)
+                .filter(t => t !== undefined);
         // Now filter uuidArray to only include tiles present in bgTileUuidArray
         const filteredUuidArray = uuidArray.filter(u => bgTileUuidArray.includes(u));
 
@@ -219,6 +232,8 @@ async function largestSceneSize(scn, actvTiles) {
  */
 async function transferCompendiumSceneFlags(source, tile) {
 
+    log(false, "Executing 'transferCompendiumSceneFlags' function.");
+
     if (!game.user.isGM) {
         log(false, "A non-GM user triggered the transferCompendiumSceneFlags() function.");
         return false;
@@ -236,6 +251,8 @@ async function transferCompendiumSceneFlags(source, tile) {
         await tile.setFlag(ModuleName, k, v);
     }
 
+    await tile.setFlag(ModuleName, "SceneName", source.name)
+
     return true;
 }
 
@@ -247,6 +264,8 @@ async function transferCompendiumSceneFlags(source, tile) {
  */
 export async function createTilerTile(source) {
 
+    log(false, "Executing 'createTilerTile' function.");
+
     if (!game.user.isGM) {
         log(false, "A non-GM user triggered the createTilerTile() function.");
         return false;
@@ -255,7 +274,7 @@ export async function createTilerTile(source) {
     const d = canvas.dimensions;
 
     // The scene tiler module will create a tile out of the selected compendium scene, placing the top left corner at grid 1 x grid 1.
-    const myTile = await SceneTiler.create(source, {x: d.paddingX + d.size, y: d.paddingY + d.size, populate: true});
+    const myTile = await SceneTiler.create(source, {x: d.paddingX, y: d.paddingY, populate: true});
     if ( !myTile ) {
         log(false, "Scene Tiler failed to create a tile.")
         return false;
@@ -266,21 +285,18 @@ export async function createTilerTile(source) {
     if ( !isTransfer) return false;
 
     // Update main scene flags with the array of created Scene Tiler tiles.
-    let mainSceneFlags = foundry.utils.deepClone(SceneScroller.sceneScrollerSceneFlags);
+    let mainSceneFlags = foundry.utils.deepClone(SceneScroller.sceneScrollerSceneFlags.SceneTilerTileIDsArray);
     const isFlags = canvas.scene.data.flags.hasOwnProperty(ModuleName);
     if ( isFlags ) {
-        for (let [k,v] of Object.entries(mainSceneFlags)) {
-            mainSceneFlags[k] = foundry.utils.deepClone(canvas.scene.getFlag(ModuleName, k));
-        }
+        mainSceneFlags = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
     }
 
-    mainSceneFlags.SceneTilerTileIDsArray.push(myTile.id);
-    for (const [k,v] of Object.entries(mainSceneFlags)) {
-        await canvas.scene.setFlag(ModuleName, k, v);
-    }
+    mainSceneFlags.push(myTile.id);
+    await canvas.scene.setFlag(ModuleName, "SceneTilerTileIDsArray", mainSceneFlags)
 
     // If necessary, resize the scene to fit the largest of: any tile plus all it's linked tiles.
-    const isResize = await largestSceneSize(canvas.scene, mainSceneFlags.SceneTilerTileIDsArray);
+    // TO-DO: Debounce this so it only runs after all tiles are created.
+    const isResize = await largestSceneSize(canvas.scene, mainSceneFlags);
     if (!isResize) {
         log(false, "Failed to resize the main Scene Scroller scene.");
         await deleteTilerTile(myTile);
@@ -295,13 +311,18 @@ export async function createTilerTile(source) {
  *  @return {void}  
  */
 export function resetMainScene(translatePlaceables = true) {
+
+    log(false, "Executing 'resetMainScene' function.");
+
     // Get ID's for all sub-scenes (Scene Tiler tiles) in the viewport (main Foundry scene).
     const tilerTilesArr = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
     // Map tilerTilesArr to find only sub-scenes that are not at their home position
     const d = canvas.dimensions;
     const tilesToHomeArr = tilerTilesArr.map(t => {
         const tile = canvas.background.get(t);
-        if ( tile.visible === true ) return tile
+        if ( tile.visible !== true) return;
+        if ( tile.position._x === d.paddingX && tile.position._y === d.paddingY ) return;
+        return tile
     }).filter(t => t !== undefined);
 
     // Gather arrays of placeable IDs, then move everything by a derived vector.
@@ -309,16 +330,14 @@ export function resetMainScene(translatePlaceables = true) {
         const placeablesIds = tile.document.getFlag("scene-tiler", "entities");
         const placeables = tilerTilePlaceables(placeablesIds);
         const vector = {
-            x: (d.paddingX + d.size) - tile.position._x,
-            y: (d.paddingY + d.size) - tile.position._y 
+            x: (d.paddingX) - tile.position._x,
+            y: (d.paddingY) - tile.position._y 
         }
-        tile.position.set(d.paddingX + d.size, d.paddingY + d.size);
-        tile.data.x = d.paddingX + d.size;
-        tile.data.y = d.paddingY + d.size;
-        tile.visible = false;
+        tile.position.set(d.paddingX, d.paddingY);
+        tile.data.x = tile.data._source.x = d.paddingX;
+        tile.data.y = tile.data._source.y = d.paddingY;
         if ( translatePlaceables ) {
             SceneScroller.offsetPlaceables(placeables, vector, {wallHome: true});
-            isVisiblePlaceables(placeables, false);
         }
     }
 
@@ -326,15 +345,20 @@ export function resetMainScene(translatePlaceables = true) {
     const tokensArr = canvas.tokens.placeables;
     for (const token of tokensArr) {
         token.position.set(d.paddingX, d.paddingY);
-        token.data.x = d.paddingX;
-        token.data.y = d.paddingY;
+        token.data.x = token.data._source.x = d.paddingX;
+        token.data.y = token.data._source.y = d.paddingY;
     }
+
+    isVisiblePlaceables(getAllPlaceables(), false);
 }
 
 /** This function will convert the array of placeable ID's obtained from the Scene Tiler flags
  *  into arrays of objects
  */
 export function tilerTilePlaceables(placeablesId) {
+
+    log(false, "Executing 'tilerTilePlaceables' function.");
+
     const placeables = {};
     for (const [k,v] of Object.entries(placeablesId)) {
         switch (k) {
@@ -374,6 +398,9 @@ export function tilerTilePlaceables(placeablesId) {
  *  @return {void}
  */
 export async function preUpdateTokenFlags(token, data, options, id) {
+
+    log(false, "Executing 'preUpdateTokenFlags' function.");
+
     if ( !SceneScroller.isScrollerScene(canvas.scene) ) return;
     // Only interested in token movement.
     if ( !data.hasOwnProperty("x") && !data.hasOwnProperty("y")) return;
@@ -412,6 +439,9 @@ export async function preUpdateTokenFlags(token, data, options, id) {
  *  @return {void}
  */
 export function moveTokenLocal(token) {
+
+    log(false, "Executing 'moveTokenLocal' function.");
+
     const tile = canvas.background.get(token.data.flags[ModuleName].CurrentTile);
     const tileOffset = token.data.flags[ModuleName].inTileLoc;
     token.position.set(tile.position._x + tileOffset.x, tile.position._y + tileOffset.y);
@@ -430,32 +460,43 @@ export function moveTokenLocal(token) {
  *  @return {void}
  */
 export async function controlToken(token, isControlled) {
-    // Reset ALL tokens to home position that aren't already there.
-    const d = canvas.dimensions;
-    const tokens = canvas.tokens.placeables.filter(t => t.data.x !== d.paddingX && t.data.y !== d.paddingY);
-    for (const token of tokens) {
-        // If the token was deleted, the database won't find it...
-        try {
-            await token.document.update({x: d.paddingX, y: d.paddingY}, {animate: false})
-        }
-        catch(err) {
-            log(false, "Token position update error.  If the token wasn't deleted, enable debugging for error message.");
-            log(false, err);
-        }
-    }
+
+    log(false, "Executing 'controlToken' function.");
 
     // If the token is being released
     if ( !isControlled ) {
         canvas.tokens.concludeAnimation();
-        return resetMainScene();
+        SceneScroller.controlToken.render(true);
+        return
     }
 
     // If the token is being controlled.
-    const destTile = token.data.flags[ModuleName].CurrentTile;
-    SceneScroller.displaySubScenes(destTile);
+    const tokenActiveScene = token.document.getFlag(ModuleName, "CurrentTile");
+    const viewportActiveScene = canvas.scene.getFlag(ModuleName, "ActiveScene");
+    if ( tokenActiveScene !== viewportActiveScene) {
+        resetMainScene();
+        const destTile = token.data.flags[ModuleName].CurrentTile;
+        await SceneScroller.displaySubScenes(destTile);
+    }
+    SceneScroller.controlToken.render(true);
+}
+
+export async function tokenCreated(doc, options, id) {
+
+    log(false, "Executing 'tokenCreated' function.");
+
+    // This workflow is only for scene-scroller scenes.
+    if ( !SceneScroller.isScrollerScene(canvas.scene) ) return true;
+
+    const sceneID = doc.getFlag(ModuleName, "CurrentTile");
+    await SceneScroller.displaySubScenes(sceneID);
+    SceneScroller.controlToken.render(true);
 }
 
 export function getAllPlaceables() {
+
+    log(false, "Executing 'getAllPlaceables' function.");
+
     return {
         drawings: canvas.drawings.placeables,
         lights: canvas.lighting.placeables,
@@ -469,6 +510,13 @@ export function getAllPlaceables() {
 }
 
 export function isVisiblePlaceables(placeables, bool) {
+
+    if ( bool ) {
+        log(false, "Executing 'isVisiblePlaceables' function.  Show Placeables.");
+    } else {
+        log(false, "Executing 'isVisiblePlaceables' function.  Hide Placeables.");
+    }
+
     for (const [placeableName, placeablesArr] of Object.entries(placeables)) {
         for (const placeable of placeablesArr) {
             placeable.visible = bool;
@@ -478,7 +526,12 @@ export function isVisiblePlaceables(placeables, bool) {
                     placeable.updateSource({defer: true});
                     break;
                 case "templates":
-                    canvas.grid.highlightLayers[`Template.${placeable.id}`].visible = bool;
+                    if ( canvas.grid.highlightLayers.hasOwnProperty(`Template.${placeable.id}`)) {
+                        canvas.grid.highlightLayers[`Template.${placeable.id}`].visible = bool;
+                    }
+                    break;
+                case "tokens":
+                    placeable.visible = bool;
                     break;
             }
         }
@@ -486,6 +539,8 @@ export function isVisiblePlaceables(placeables, bool) {
 }
 
 function isEndNewTile(token, destination) {
+
+    log(false, "Executing 'isEndNewTile' function.");
 
     const onTileId = token.getFlag(ModuleName, "CurrentTile");
     const onTile = canvas.background.get(onTileId);
@@ -519,11 +574,14 @@ const debounceTileFlagUpdate = foundry.utils.debounce(async (tile, token) => {
     }
     await token.document.setFlag(ModuleName, "inTileLoc", newLoc)
     resetMainScene();
-    SceneScroller.displaySubScenes(tile.id);
+    await SceneScroller.displaySubScenes(tile.id);
     ui.notifications.info("Debounce triggered.")
 }, 1000);
 
 function newTile_UpdateFlags(token, tiles) {
+
+    log(false, "Executing 'newTile_UpdateFlags' funciton.");
+
     const currTileId = token.document.getFlag(ModuleName, "CurrentTile");
     const currTile = canvas.background.get(currTileId);
 

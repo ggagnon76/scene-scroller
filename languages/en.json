@@ -1,22 +1,17 @@
 {
     "SceneScroller": {
-        "OptionOr": "OR CHOOSE",
-        "OptionEither": "EITHER CHOOSE",
-        "NewTokenTileSelectUI": {
-            "Title": "SCENE SCROLLER: Select sub-Scene",  
-            "Instructions": {
-                "General": "Drag from the selections below to continue token creation workflow.  When you start dragging, the main scene will resolve to show the chosen sub-scene.",
-                "Scenes": "1) Directly from these sub-scenes:",
-                "Tokens": "2) A token below to indirectly select the sub-scene they currently occupy:"
-            }
-        },
-        "SelectSceneUI" : {
+        "InitiateSceneUI" : {
             "Title" : "SCENE SCROLLER: Select Seed Scene",
             "SelectDefault" : "Nothing Selected.",
             "Instructions" : {
                 "SelectCompendium": "Select Compendium:",
                 "SelectScene": "Select Scene:"
             }
+        },
+        "SelectSceneUI" : {
+            "Title" : "Control Token",
+            "TokenButtonText" : "Sub-Scene List",
+            "TileButtonText" : "Tokens List"
         }
     }
 }

@@ -1,12 +1,12 @@
 import { ModuleName } from "../ss-initialize.js";
-import { getSource, resetMainScene } from "./Functions.js";
+import { getSource } from "./Functions.js";
 import { SceneScroller } from "./SceneScroller.js";
 
 /** Form application that will be invoked when the DM activates a scene to become
  *  a Scene-Scroller viewport.
  *  The form will request the DM choose a compendium and then a seed scene.
  */
-export class ScrollerSelectScene extends FormApplication {
+export class ScrollerInitiateScene extends FormApplication {
     constructor(resolve) {
       super();
       
@@ -31,8 +31,8 @@ export class ScrollerSelectScene extends FormApplication {
       return mergeObject(super.defaultOptions, {
         width: 400,
         template: `./modules/${ModuleName}/templates/initialize.hbs`,
-        id: "scene-scroller-selection-form",
-        title: game.i18n.localize('SceneScroller.SelectSceneUI.Title'),
+        id: "scene-scroller-initiate-form",
+        title: game.i18n.localize('SceneScroller.InitiateSceneUI.Title'),
         submitOnChange: true,
         closeOnSubmit: false
       })
@@ -51,9 +51,9 @@ export class ScrollerSelectScene extends FormApplication {
   
       // Send list of scene compendiums to the template
       return {
-        compSelectText: game.i18n.localize('SceneScroller.SelectSceneUI.Instructions.SelectCompendium'),
-        defaultSelect: game.i18n.localize('SceneScroller.SelectSceneUI.SelectDefault'),
-        sceneSelectText: game.i18n.localize('SceneScroller.SelectSceneUI.Instructions.SelectScene'),
+        compSelectText: game.i18n.localize('SceneScroller.InitiateSceneUI.Instructions.SelectCompendium'),
+        defaultSelect: game.i18n.localize('SceneScroller.InitiateSceneUI.SelectDefault'),
+        sceneSelectText: game.i18n.localize('SceneScroller.InitiateSceneUI.Instructions.SelectScene'),
         compendiumList: this.compendiumList,
         compendium: this.compendiumChoice,
         sceneList: this.sceneList
@@ -80,127 +80,104 @@ export class ScrollerSelectScene extends FormApplication {
     }
   }
 
-  /* -------------------------------------------------------------------------------------------*/
+/* --------------------------------------------------------------------------------------------------- */
 
-  /** This is a window that will be invoked every time a user or DM tries to create a token,
-   *  either programmatically (via preCreateToken Hook) or by dragging an actor from the actor
-   *  folder onto the canvas (wrapped ActorDirectory#_onDragStart).
-   * 
-   *  The window will provide a list of sub-scenes (Scene Tiler tiles) to choose that are already in the 
-   *  main scene (viewport) as well as a list of all tokens, such that the user can 
-   *  select the sub-scene a token occupies by choosing the token.
-   * 
-   *  This is necessary because the location of the token is stored in token flags, and is relative
-   *  to the top left corner of the tile it occupies.
-   */
-  export class NewTokenTileSelectUI extends Application { 
-     constructor(data, options={}){
-       super(options);
-       this._dragDrop[0].permissions["dragstart"] = () => game.user.can("TOKEN_CREATE");
-       this.draggedActor = data.actorId || data._id;
-     } 
-  
-    /** @override */
-      static get defaultOptions() {
-        return foundry.utils.mergeObject(super.defaultOptions, {
-          width: 300,
-          height: "auto",
-          id: "new_token_tile_select_ui",
-          template: "./modules/scene-scroller/templates/token-create.hbs",
-          title: game.i18n.localize('SceneScroller.NewTokenTileSelectUI.Title'),
-          dragDrop: [{ dragSelector: ".ss-scene-list"}, { dragSelector: ".ss-actor-list"}]
-        });
-    }
-  
-    /** @override */
-    async getData() {
-  
-      // This section gets all the compendium scenes currently active in the main scene.
-      // Gather an array of all the Scene Tiler tiles in the scene
-      const sceneTilerTilesIDs = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
-      // For every Scene-Tiler tile, get the UUID as well as the tile ID.
-      const sceneTilerTilesUUID = sceneTilerTilesIDs.map(t => {
-        return  {  tileId: t,
-                  compendiumSceneUUID: canvas.background.get(t).document.getFlag("scene-tiler", "scene")
-                }
-      })
-      // For every sceneUUID, get the compendium scenes source.
-      const compendiumScenes = await Promise.all(sceneTilerTilesUUID.map( async (u) => {
-        return {  tileId: u.tileId, 
-                  compendiumScene: await fromUuid(u.compendiumSceneUUID)
-               }
-      }));
+/** Form application that will be invoked anytime a user can select a different token to manipulate.
+ *  The DM will always be able to manipulate all tokens, so this will always be active for them.
+ *  The DM will also have a tab to choose to activate a sub-scene without selecting a token.
+ */
+ export class ScrollerViewSubSceneSelector extends FormApplication {
+  constructor(object={}, options={}) {
+    super(object, options);
+    this.tokens = options.tokens || true;
+  }
 
-      // This section gets all the actors with tokens currently in the main scene
-      // Get an array of all tokens that are linked to actors
-      const allTokens = canvas.tokens.placeables;
-      // Filter allTokens to find only those that have 'scene-scroller' in their flags.
-      allTokens.filter(t => t.data.flags.hasOwnProperty(ModuleName));
-      // Map the allTokens array to create an array of objects containing actor documents and destination tile IDs.
+  static get defaultOptions() {
+    return mergeObject(super.defaultOptions, {
+      width: 200,
+      height: "auto",
+      template: `./modules/${ModuleName}/templates/subsceneselector.hbs`,
+      id: "scene-scroller-selection-form",
+      title: game.i18n.localize('SceneScroller.SelectSceneUI.Title')
+    })
+  }
 
-      const allActors = allTokens.map(t => {
-        const actor = game.actors.get(t.data.actorId);
-        const destination = t.data.flags[ModuleName].CurrentTile ||
-                            t.data; 
-        return {actor: actor, tileId: destination};
+  async getData() {
+
+    // This gets all the sub-scenes (Scene-Tiler tiles) that have all their linked sub-tiles available in the viewport
+    const allSubSceneIDs = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");  // These are ID's
+    const hasLinkedScenes = [];
+    for (const subSceneID of allSubSceneIDs) {
+      const subScene = canvas.background.get(subSceneID);
+      const sourceUUID = subScene.document.getFlag("scene-tiler", "scene");
+      const source = await fromUuid(sourceUUID);
+      const sceneScrollerTileLinks = subScene.document.getFlag(ModuleName, "LinkedTiles");
+      const allLinkedIDs = [];
+      for (const sceneScrollerTileLink of sceneScrollerTileLinks) {  // These are UUIDs.
+        const linkSource = await fromUuid(sceneScrollerTileLink.SceneUUID);
+        for (const sceneID of allSubSceneIDs) {
+          const tile = canvas.background.get(sceneID);
+          const isTrue = tile.document.getFlag(ModuleName, "SceneName") === linkSource.name;
+          if ( isTrue ) allLinkedIDs.push(tile.id);
+        }
+      }
+      const isLinkedScene = allLinkedIDs.every(id => {
+        return allSubSceneIDs.includes(id);
       });
-
-      // Return data to the sidebar
-      return {
-        generalNote: game.i18n.localize('SceneScroller.NewTokenTileSelectUI.Instructions.General'),
-        scenesNote: game.i18n.localize('SceneScroller.NewTokenTileSelectUI.Instructions.Scenes'),
-        tokensNote: game.i18n.localize('SceneScroller.NewTokenTileSelectUI.Instructions.Tokens'),
-        optionOr: game.i18n.localize('SceneScroller.OptionOr'),
-        optionEither: game.i18n.localize('SceneScroller.OptionEither'),
-        actor: this.draggedActor,
-        sceneArray: compendiumScenes,
-        actorArray: allActors
+      if ( isLinkedScene ) {
+        if ( canvas.scene.getFlag(ModuleName, "ActiveScene") === subScene.id ) continue;
+        const obj = {
+          tileId : subScene.id,
+          thumb: source.thumbnail,
+          name: source.name
+        }
+        hasLinkedScenes.push(obj);
       }
     }
-  
-    /* -------------------------------------------- */
 
-    /** @override */
-  _onDragStart(event) {
+    let buttonText = "";
+    if ( this.tokens ) buttonText = game.i18n.localize('SceneScroller.SelectSceneUI.TokenButtonText');
+    else buttonText = game.i18n.localize('SceneScroller.SelectSceneUI.TileButtonText');
 
-    Hooks.once('dropCanvasData', async (canvas, data) => {
-      const actor = game.actors.get(data.id);
-      
-      await actor.data.token.update({"flags": {
-        "scene-scroller": {
-          "CurrentTile": data.destination,
-          "inTileLoc": null
-        }
-      }})
-
-      Hooks.once('createToken', () => {
-        resetMainScene(false);
-      })
-    })
+    // This gets all the tokens the user has permissions to at least view.
+    // We also don't want tokens that are already being controlled in this list.
+    const viewableTokens = canvas.tokens.placeables.filter(t => t.observer === true).filter(t => t._controlled === false);
 
 
-    const li =  event.currentTarget.closest(".ss-scene-list") ||
-                event.currentTarget.closest(".ss-actor-list");
-    const destTileId = li.dataset.documentId;
-
-    let actor = null;
-    if ( this.draggedActor ) {
-      actor = game.actors.get(this.draggedActor);
-      if ( !actor || !actor.visible ) return false;
-    }
-
-    // Create the drag preview for the Token
-    if ( actor && canvas.ready ) {
-      SceneScroller.displaySubScenes(destTileId, false);
-      const img = {src: actor.thumbnail};
-      const td = actor.data.token;
-      const w = td.width * canvas.dimensions.size * td.scale * canvas.stage.scale.x;
-      const h = td.height * canvas.dimensions.size * td.scale * canvas.stage.scale.y;
-      const preview = DragDrop.createDragImage(img, w, h);
-      event.dataTransfer.setDragImage(preview, w / 2, h / 2);
-      event.dataTransfer.setData("text/plain", JSON.stringify({id: this.draggedActor, type: "Actor", destination: destTileId}));
-      this.close();
+    // Send list tokens to the template
+    return {
+      viewableTokens : viewableTokens,
+      viewableScenes : hasLinkedScenes,
+      isGM: game.user.isGM,
+      ssButtonText : buttonText,
+      isTokens : this.tokens
     }
   }
 
+  activateListeners(html) {
+    super.activateListeners(html);
+    html.find('.ss-token-select-list').click(this.tokenDisplaySubScene.bind(this));
+    html.find('.ss-scene-list').click(this.sceneDisplaySubScene.bind(this));
+    html.find('.ss-swap-buttons').click(this.swapMode.bind(this));
+  }
+
+  tokenDisplaySubScene(event) {
+    const li =  event.currentTarget.closest(".ss-token-select-list");
+    const tokenID = li.dataset.documentId;
+    const token = canvas.tokens.get(tokenID);
+    token.control({releaseOthers: true});
+    this.render(true);
+  }
+
+  async sceneDisplaySubScene(event) {
+    const li =  event.currentTarget.closest(".ss-scene-list");
+    const sceneID = li.dataset.documentId;
+    await SceneScroller.displaySubScenes(sceneID, true);
+    this.render(true);
+  }
+
+  swapMode() {
+    this.tokens = !this.tokens;
+    this.render(true);
+  }
 }

@@ -29,28 +29,7 @@ export function scene_onupdate() {
         }, 'WRAPPER');
 }
 
-/** Libwrapper initialized on 'init' hook.  (does not work on 'ready' hook) See ss-initialize.js
- * 
- *  When a user or DM attempts to create a token by dragging an actor from the actor directory to the canvas,
- *  this wrapper will prevent the drag preview from occuring (event.preventDefault) and trigger the
- *  NewTokenTileSelectUI application.  See Forms.js for further details.
- */
-export function actordirectory_ondragstart() {
-        libWrapper.register(ModuleName, 'ActorDirectory.prototype._onDragStart', function myOnDragStart(wrapped, ...args) {
-            if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
-            const event = args[0];
-            event.preventDefault();
-            const li = event.currentTarget.closest(".directory-item");
-            let actor = null;
-            if ( li.dataset.documentId ) {
-                actor = game.actors.get(li.dataset.documentId);
-                if ( !actor || !actor.visible ) return wrapped(...args);
-            }
-            SceneScroller.tokenCreate(actor, actor.data);
-        }, 'MIXED');
-    }
-
-export function myTestWallInclusion(wall) {
+export function myTestWallInclusion() {
     function testWall(wall) {
         const subSceneIds = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
         let wallArr = []
@@ -71,7 +50,7 @@ export function myTestWallInclusion(wall) {
 }
 
 export function updateToken() {
-    libWrapper.register(ModuleName, 'Token.prototype.animateMovement', function myAnimateMovement(wrapped, ...args) {
+    libWrapper.register(ModuleName, 'Token.prototype.animateMovement', async function myAnimateMovement(wrapped, ...args) {
         if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
         return wrapped(...args).then(() => {
             if ( SceneScroller.updateToken === null) return;

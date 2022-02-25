@@ -1,7 +1,7 @@
 import { message_handler } from "./lib/Socket.js";
 import { SceneScroller } from "./lib/SceneScroller.js";
 import * as wrapper from "./lib/Wrap.js"
-import { controlToken, preUpdateTokenFlags } from "./lib/Functions.js"
+import { log, controlToken, preUpdateTokenFlags, tokenCreated } from "./lib/Functions.js"
 
 // Boolean to be used for any entry function that will launch Scene Scroller methods or functions.
 // If isReady is false (not ready), then the module should offer not functionality at all.
@@ -10,7 +10,7 @@ let isReady = false;
 // Convenience variable to insert the module name where required
 export const ModuleName = "scene-scroller";
 // Convenience variable to insert the module title where required
-export const ModuleTitle = "Scene Scroller";
+export const ModuleTitle = "SCENE SCROLLER";
 // Convenience variable when calling game.socket
 export const SocketModuleName = "module." + ModuleName
 
@@ -21,7 +21,6 @@ export const SocketModuleName = "module." + ModuleName
  */
 Hooks.once('init', () => {
     wrapper.scene_onupdate();
-    wrapper.actordirectory_ondragstart();
     wrapper.myTestWallInclusion();
     wrapper.updateToken();
     wrapper.isDoorVisible();
@@ -32,6 +31,7 @@ Hooks.once('init', () => {
  *   - Make the SceneScroller class available as an api.  For debugging.  Review this before any kind of public release.
  */
 Hooks.once('ready', () => {
+    log(false, "Hook content for 'ready' executing.");
     game.socket.on(SocketModuleName, message_handler);
     game.modules.get(ModuleName).api = SceneScroller;
 })
@@ -39,6 +39,7 @@ Hooks.once('ready', () => {
 // This works with the Foundryvtt-devMode module to create debug settings that persist across refreshes.
 // If used properly, debug logging (see log() function) will not be released to users.
 Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
+    log(false, "Hook content for 'devModeReady' executing.");
     registerPackageDebugFlag(ModuleName);
 });
 
@@ -50,3 +51,17 @@ Hooks.on('preCreateToken', SceneScroller.tokenCreate);
 Hooks.on('controlToken', controlToken);
 // Token movement workflow
 Hooks.on('preUpdateToken', preUpdateTokenFlags);
+// Update the sub-scene selection window when a token is deleted.
+Hooks.on('deleteToken', () => {
+    log(false, "Hook content for 'deleteToken' executing.");
+    SceneScroller.controlToken.render(true)
+});
+// Refresh the sub-scene when tokens are created.
+Hooks.on('createToken', tokenCreated);
+// Remove SS selection window when changing or deleting scenes
+Hooks.on('deleteScene', () => {
+    if (SceneScroller.controlToken !== null) {
+        SceneScroller.controlToken.close();
+        SceneScroller.controlToken = null;
+    }
+})

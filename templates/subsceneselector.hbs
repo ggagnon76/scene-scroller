@@ -1,0 +1,39 @@
+<section class="ss-app" id="sub-scene-select">
+    <form>
+        {{#if isGM}}
+        <div class="ss-swap-buttons">
+            <h3>{{ssButtonText}}</h3>
+        </div>
+        {{/if}}
+        <ol>
+            {{#if isTokens}}
+                {{#each viewableTokens}}
+                    <li class="ss-token-select-list" data-document-id="{{this.id}}">
+                        {{#if this.data.img}}
+                            <img    class="ss-thumbnail" 
+                                    title=" {{#if this.data.actorData.name}}{{this.data.actorData.name}}
+                                            {{else}} {{this.data.name}}
+                                            {{/if}}"
+                                    src="{{this.data.img}}"/>
+                        {{/if}}
+                        <h4>{{#if this.data.actorData.name}}{{this.data.actorData.name}}
+                            {{else}} {{this.data.name}}
+                            {{/if}}
+                        </h4>
+                    </li>
+                {{/each}}
+            {{else}}
+                {{log viewableScenes}}
+                {{#each viewableScenes}}
+                    <li class="ss-scene-list" data-document-id="{{this.tileId}}"
+                    {{#if this.thumb}}
+                        style="background-image: url({{this.thumb}}); background-position: left"
+                    {{/if}}
+                    >
+                <h2>{{this.name}}</h2>
+            </li>
+                {{/each}}
+            {{/if}}
+        </ol>
+    </form>
+</section>
