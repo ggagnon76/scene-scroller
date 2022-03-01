@@ -86,7 +86,12 @@ export async function refreshSceneAfterResize(size) {
     }
 
     // Update the location of placeables to account for any delta in paddingX & paddingY
-    SceneScroller.offsetPlaceables(getAllPlaceables(), deltaPadding, {save: true, wallHome: true})
+    const offsetObj = {
+        vector: deltaPadding,
+        placeablesIds: null,
+        placeables: getAllPlaceables()
+    }
+    SceneScroller.offsetPlaceables(offsetObj, {save: true, wallHome: true})
 
     canvas.stage.hitArea = canvas.dimensions.rect;
     canvas.templates.hitArea = canvas.dimensions.rect;
@@ -307,28 +312,23 @@ export async function createTilerTile(source) {
 }
 
 /** When the viewport is showing sub-scenes, this function will reset everything to their home positions
- *  @param {Boolean}        translatePlaceables         - Defaults to true.  (token creation sub-scene preview will not move placeables)
  *  @return {void}  
  */
-export function resetMainScene(translatePlaceables = true) {
+export function resetMainScene() {
 
     log(false, "Executing 'resetMainScene' function.");
 
     // Get ID's for all sub-scenes (Scene Tiler tiles) in the viewport (main Foundry scene).
-    const tilerTilesArr = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
-    // Map tilerTilesArr to find only sub-scenes that are not at their home position
+    const tilerTileIDsArr = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
+    // Map tilerTileIDsArr to convert to tile objects
     const d = canvas.dimensions;
-    const tilesToHomeArr = tilerTilesArr.map(t => {
-        const tile = canvas.background.get(t);
-        if ( tile.visible !== true) return;
-        if ( tile.position._x === d.paddingX && tile.position._y === d.paddingY ) return;
-        return tile
+    const tilesToHomeArr = tilerTileIDsArr.map(t => {
+        return canvas.background.get(t);
     }).filter(t => t !== undefined);
+    const offsetPlaceablesObjArray = [];
 
     // Gather arrays of placeable IDs, then move everything by a derived vector.
     for (const tile of tilesToHomeArr) {
-        const placeablesIds = tile.document.getFlag("scene-tiler", "entities");
-        const placeables = tilerTilePlaceables(placeablesIds);
         const vector = {
             x: (d.paddingX) - tile.position._x,
             y: (d.paddingY) - tile.position._y 
@@ -336,56 +336,64 @@ export function resetMainScene(translatePlaceables = true) {
         tile.position.set(d.paddingX, d.paddingY);
         tile.data.x = tile.data._source.x = d.paddingX;
         tile.data.y = tile.data._source.y = d.paddingY;
-        if ( translatePlaceables ) {
-            SceneScroller.offsetPlaceables(placeables, vector, {wallHome: true});
+        tile.visible = false;
+
+        const placeablesIds = tile.document.getFlag("scene-tiler", "entities");
+        const offsetObj = {
+            vector: vector,
+            placeablesIds: placeablesIds,
+            placeables: null
         }
+        offsetPlaceablesObjArray.push(offsetObj);
     }
 
-    // All tokens should also be at their home position
-    const tokensArr = canvas.tokens.placeables;
-    for (const token of tokensArr) {
-        token.position.set(d.paddingX, d.paddingY);
-        token.data.x = token.data._source.x = d.paddingX;
-        token.data.y = token.data._source.y = d.paddingY;
-    }
-
-    isVisiblePlaceables(getAllPlaceables(), false);
+    SceneScroller.offsetPlaceables(offsetPlaceablesObjArray, {visible: false, wallHome: true});
 }
 
 /** This function will convert the array of placeable ID's obtained from the Scene Tiler flags
  *  into arrays of objects
  */
-export function tilerTilePlaceables(placeablesId) {
+export function tilerTilePlaceables(data) {
 
     log(false, "Executing 'tilerTilePlaceables' function.");
 
-    const placeables = {};
-    for (const [k,v] of Object.entries(placeablesId)) {
-        switch (k) {
-            case "drawings":
-                placeables[k] = v?.map(d => canvas.drawings.get(d));
-                break;
-            case "lights":
-                placeables[k] = v?.map(l => canvas.lighting.get(l));
-                break;
-            case "notes":
-                placeables[k] = v?.map(n => canvas.notes.get(n));
-                break;
-            case "sounds":
-                placeables[k] = v?.map(s => canvas.sounds.get(s));
-                break;
-            case "templates":
-                placeables[k] = v?.map(t => canvas.templates.get(t));
-                break;
-            case "tiles":
-                placeables[k] = v?.map(t => canvas.background.get(t) || canvas.foreground.get(t));
-                break;
-            case "walls":
-                placeables[k] = v?.map(w => canvas.walls.get(w));
-                break;
+    data = data instanceof Array ? data : [data];
+
+    for (const subData of data) {
+
+        if ( subData.placeables !== null) continue;
+
+        const placeableIds = subData.placeablesIds;
+        const placeables = subData.placeables = {};
+
+        for (const [k,v] of Object.entries(placeableIds)) {
+            switch (k) {
+                case "drawings":
+                    placeables[k] = v?.map(d => canvas.drawings.get(d));
+                    break;
+                case "lights":
+                    placeables[k] = v?.map(l => canvas.lighting.get(l));
+                    break;
+                case "notes":
+                    placeables[k] = v?.map(n => canvas.notes.get(n));
+                    break;
+                case "sounds":
+                    placeables[k] = v?.map(s => canvas.sounds.get(s));
+                    break;
+                case "templates":
+                    placeables[k] = v?.map(t => canvas.templates.get(t));
+                    break;
+                case "tiles":
+                    placeables[k] = v?.map(t => canvas.background.get(t) || canvas.foreground.get(t));
+                    break;
+                case "walls":
+                    placeables[k] = v?.map(w => canvas.walls.get(w));
+                    break;
+            }
         }
     }
-    return placeables;
+
+    return data;
 }
 
 /** This function is called by a preUpdateToken hook.  See ss-initialize.js
@@ -438,16 +446,20 @@ export async function preUpdateTokenFlags(token, data, options, id) {
  *  @param {Object}         token           - The token object to be translated.
  *  @return {void}
  */
-export function moveTokenLocal(token) {
+export function moveTokensLocal(data) {
 
-    log(false, "Executing 'moveTokenLocal' function.");
+    log(false, "Executing 'moveTokensLocal' function.");
 
-    const tile = canvas.background.get(token.data.flags[ModuleName].CurrentTile);
-    const tileOffset = token.data.flags[ModuleName].inTileLoc;
-    token.position.set(tile.position._x + tileOffset.x, tile.position._y + tileOffset.y);
-    token.data.x = token.data._source.x = tile.position._x + tileOffset.x;
-    token.data.y = token.data._source.y = tile.position._y + tileOffset.y;
-    token.visible = true;
+    data = data instanceof Array ? data : [data];
+
+    for (const token of data) {
+        const tile = canvas.background.get(token.data.flags[ModuleName].CurrentTile);
+        const tileOffset = token.data.flags[ModuleName].inTileLoc;
+        token.position.set(tile.position._x + tileOffset.x, tile.position._y + tileOffset.y);
+        token.data.x = token.data._source.x = tile.position._x + tileOffset.x;
+        token.data.y = token.data._source.y = tile.position._y + tileOffset.y;
+        token.visible = true;
+    }
 }
 
 /** This function is called by the 'controlToken' hook.  See ss-initialize.js
@@ -509,7 +521,7 @@ export function getAllPlaceables() {
     };
 }
 
-export function isVisiblePlaceables(placeables, bool) {
+export function isVisiblePlaceables(data, bool) {
 
     if ( bool ) {
         log(false, "Executing 'isVisiblePlaceables' function.  Show Placeables.");
@@ -517,22 +529,27 @@ export function isVisiblePlaceables(placeables, bool) {
         log(false, "Executing 'isVisiblePlaceables' function.  Hide Placeables.");
     }
 
-    for (const [placeableName, placeablesArr] of Object.entries(placeables)) {
-        for (const placeable of placeablesArr) {
-            placeable.visible = bool;
-            switch(placeableName) {
-                case "lights" :
-                    placeable.data.hidden = !bool;
-                    placeable.updateSource({defer: true});
-                    break;
-                case "templates":
-                    if ( canvas.grid.highlightLayers.hasOwnProperty(`Template.${placeable.id}`)) {
-                        canvas.grid.highlightLayers[`Template.${placeable.id}`].visible = bool;
-                    }
-                    break;
-                case "tokens":
-                    placeable.visible = bool;
-                    break;
+    data = data instanceof Array ? data : [data];
+
+    for (const subData of data) {
+        const placeables = subData.placeables;
+        for (const [placeableName, placeablesArr] of Object.entries(placeables)) {
+            for (const placeable of placeablesArr) {
+                placeable.visible = bool;
+                switch(placeableName) {
+                    case "lights" :
+                        placeable.data.hidden = !bool;
+                        placeable.updateSource({defer: true});
+                        break;
+                    case "templates":
+                        if ( canvas.grid.highlightLayers.hasOwnProperty(`Template.${placeable.id}`)) {
+                            canvas.grid.highlightLayers[`Template.${placeable.id}`].visible = bool;
+                        }
+                        break;
+                    case "tokens":
+                        placeable.visible = bool;
+                        break;
+                }
             }
         }
     }

@@ -1,7 +1,7 @@
  import { ModuleName } from "../ss-initialize.js";
 import { ScrollerInitiateScene, ScrollerViewSubSceneSelector } from "./Forms.js";
 import { socketWrapper, msgDict } from "./Socket.js";
-import { createTilerTile, getAllPlaceables, isVisiblePlaceables, log, moveTokenLocal, resetMainScene, tilerTilePlaceables } from "./Functions.js";
+import { createTilerTile, isVisiblePlaceables, log, moveTokensLocal, resetMainScene, tilerTilePlaceables } from "./Functions.js";
 
 /**
  * Manipulates the scene in several ways to stitch smaller scenes together to simulate a much bigger scene
@@ -89,7 +89,7 @@ export class SceneScroller {
      * @memberof SceneScroller 
      */
     static isScrollerScene(scn) {
-        log(false, "Executing 'isScrollerScene' method.");
+        //log(false, "Executing 'isScrollerScene' method.");
         if (scn?.data?.flags?.hasOwnProperty(ModuleName)) return true;
         return false;
     }
@@ -121,12 +121,9 @@ export class SceneScroller {
             // Then check for array length.  If length 1 or greater, launch sub-scene selector window.
         }
 
-        // Make every placeable visible = false
-        isVisiblePlaceables(getAllPlaceables(), false);
         const activeSceneID = canvas.scene.getFlag(ModuleName, "ActiveScene");
- 
         // Display the main sub-scene
-        await SceneScroller.displaySubScenes(activeSceneID, true);
+        await SceneScroller.displaySubScenes(activeSceneID, true, true);
    }
 
     /**
@@ -216,23 +213,31 @@ export class SceneScroller {
      *  In some instances, placeables will be moved per client and NOT saved.
      *  In other instances, the placeables will be moved and saved for all clients.
      * 
-     * @param {Object}          placeables      -  {drawings: [],
-     *                                              lights: [],
-     *                                              notes: [],
-     *                                              sounds: [],
-     *                                              templates: [],
-     *                                              tiles: [],
-     *                                              tokens: [],
-     *                                              walls: []
-     *                                             }
-     * @param {Object}          vector          -  {x: Number, y: Number}
-     * @param {Object}          options         - Options which modify how the clients manipulate the data.
-     * @param {boolean}         options.save    - (Optional), Default, false.  If true, will save translation to database.  Automatically propagated to all clients.
+     * @param {Object[]|Object} data                - data object (or array of data objects)
+     *                                              - data.placeables = {
+     *                                                  drawings: [],
+     *                                                  lights: [],
+     *                                                  notes: [],
+     *                                                  sounds: [],
+     *                                                  templates: [],
+     *                                                  tiles: [],
+     *                                                  tokens: [],
+     *                                                  walls: []
+     *                                               }
+     *                                              - data.vector = {x: <Number>, y: <Number>}
+     *                                              - data.placeablesIds = Object of arrays of strings from Scene-Tiler entities flag.
+     * @param {Object}          options             - Options which modify how the clients manipulate the data.
+     * @param {boolean}         options.visible     - (Optional), Default, true.  If false, placeables will not be visible.
+     * @param {boolean}         options.save        - (Optional), Default, false.  If true, will save translation to database.  Automatically propagated to all clients.
      * @param {boolean}         options.wallHome    - (Optional), Default, false.  If true, the PIXI.Containers will have their position reset to {0,0}.
      */
-    static async offsetPlaceables(placeables, vector, {save = false, wallHome = false}={}) {
+    static async offsetPlaceables(data, {visible = true, save = false, wallHome = false}={}) {
 
         log(false, "Executing 'offsetPlaceables' method.");
+
+        data = data instanceof Array ? data : [data];
+
+        tilerTilePlaceables(data);
 
         const updates = {
             drawings: [],
@@ -245,49 +250,57 @@ export class SceneScroller {
             walls: []
         };
 
-        for (const placeableKey in placeables) {
-            switch(placeableKey) {
-                case "walls":
-                    for (const placeable of placeables[placeableKey]) {
-                        const currPosition = placeable.center;
-                        const position = wallHome ? {x: 0, y: 0} : {x: currPosition.x + vector.x, y: currPosition.y + vector.y};
-                        placeable.position.set(position.x, position.y);
-                        placeable.data.c[0] += vector.x;
-                        placeable.data.c[2] += vector.x;
-                        placeable.data.c[1] += vector.y;
-                        placeable.data.c[3] += vector.y;
-                        placeable.data._source.c[0] += vector.x;
-                        placeable.data._source.c[2] += vector.x;
-                        placeable.data._source.c[1] += vector.y;
-                        placeable.data._source.c[3] += vector.y;
+        for (const subData of data) {
 
-                        placeable._onModifyWall(true);
-                        
-                        updates[placeableKey].push({_id: placeable.id, c: [
-                            placeable.data.c[0],
-                            placeable.data.c[1],
-                            placeable.data.c[2],
-                            placeable.data.c[3]
-                        ]});
-                    }
-                    break;
-                default:
-                    for (const placeable of placeables[placeableKey]) {
-                        placeable.position.set(placeable.data._source.x + vector.x, placeable.data._source.y + vector.y);
-                        placeable.data.x = placeable.data._source.x = placeable.data._source.x + vector.x;
-                        placeable.data.y = placeable.data._source.y = placeable.data._source.y + vector.y;
-                        updates[placeableKey].push({_id: placeable.id, x: placeable.data.x, y: placeable.data.y});
-                        switch(placeableKey) {
-                            case "lights":
-                                placeable.updateSource({defer: true});
-                                break;
-                            case "templates":
-                                placeable.draw();
-                                break;
+            const vector = subData.vector;
+            const placeables = subData.placeables;
+
+            for (const placeableKey in placeables) {
+                switch(placeableKey) {
+                    case "walls":
+                        for (const placeable of placeables[placeableKey]) {
+                            const currPosition = placeable.center;
+                            const position = wallHome ? {x: 0, y: 0} : {x: currPosition.x + vector.x, y: currPosition.y + vector.y};
+                            placeable.position.set(position.x, position.y);
+                            placeable.data.c[0] += vector.x;
+                            placeable.data.c[2] += vector.x;
+                            placeable.data.c[1] += vector.y;
+                            placeable.data.c[3] += vector.y;
+                            placeable.data._source.c[0] += vector.x;
+                            placeable.data._source.c[2] += vector.x;
+                            placeable.data._source.c[1] += vector.y;
+                            placeable.data._source.c[3] += vector.y;
+
+                            placeable._onModifyWall(true);
+                            
+                            updates[placeableKey].push({_id: placeable.id, c: [
+                                placeable.data.c[0],
+                                placeable.data.c[1],
+                                placeable.data.c[2],
+                                placeable.data.c[3]
+                            ]});
                         }
-                    }
+                        break;
+                    default:
+                        for (const placeable of placeables[placeableKey]) {
+                            placeable.position.set(placeable.data._source.x + vector.x, placeable.data._source.y + vector.y);
+                            placeable.data.x = placeable.data._source.x = placeable.data._source.x + vector.x;
+                            placeable.data.y = placeable.data._source.y = placeable.data._source.y + vector.y;
+                            updates[placeableKey].push({_id: placeable.id, x: placeable.data.x, y: placeable.data.y});
+                            switch(placeableKey) {
+                                case "lights":
+                                    placeable.updateSource({defer: true});
+                                    break;
+                                case "templates":
+                                    placeable.draw();
+                                    break;
+                            }
+                        }
+                }
             }
         }
+
+        isVisiblePlaceables(data, visible);
 
         if ( save ) {
             // To keep the visuals smooth, prevent a canvas.draw()
@@ -384,9 +397,10 @@ export class SceneScroller {
      * 
      *  @param {String}         tilerTileId             - The tile ID for the 'main' sub-scene.
      *  @param {Boolean}        translatePlaceables     - Optional boolean parameter to indicate if transfering placeables is required.  Defaults to true.
+     *  @param {Boolean}        onReady                 - Optional boolean parameter to indicate the foundry scene is being set up for the first time.
      *  @return {Boolean}                               - Return true on success.  Return false if the function fails.
      */
-    static async displaySubScenes(tilerTileId, translatePlaceables = true) {
+    static async displaySubScenes(tilerTileId, translatePlaceables = true, onReady = false) {
 
         if ( translatePlaceables ) {
             log(false, "Executing 'displaySubScenes' method.  Translate placeables.");
@@ -399,7 +413,7 @@ export class SceneScroller {
                     .filter(t => t?.data?.flags?.hasOwnProperty("scene-tiler"))
                     .filter(t => t.visible === true);
 
-        if ( tilerTileId === viewportActiveScene && visibleSubScenes.length ) {
+        if ( tilerTileId === viewportActiveScene && visibleSubScenes.length && !onReady) {
             log(false, "Aborting 'displaySubScenes' method because already displaying scene.");
             return;
         }
@@ -474,24 +488,35 @@ export class SceneScroller {
 
         // For each token associated with any particular active sub-scene, move the token to the position (relative to tile TLC) saved in the token flags.
         const allTokensArr = canvas.tokens.placeables;
+        const tokenArr = [];
         for (const token of allTokensArr) {
             const tokenTileId = token.document.getFlag(ModuleName, "CurrentTile");
             const tile = canvas.background.get(tokenTileId);
-            if ( tile.visible === true ) moveTokenLocal(token);
+            if ( tile.visible === true ) tokenArr.push(token);
         }
+
+        moveTokensLocal(tokenArr);
+
+        await canvas.scene.setFlag(ModuleName, "ActiveScene", tilerTileId);
 
         // If required, move all the placeable objects associated with this sub-scene (see Scene-Tiler flags) by the same translation.
         if ( !translatePlaceables ) return;
+        const offsetPlaceablesObjArray = [];
         for (const tileId of tilerTilesArr) {
             const tile = canvas.background.get(tileId);
             if ( tile.visible === false ) continue; 
-            const placeablesIds = tile.document.getFlag("scene-tiler", "entities");
-            const placeables = tilerTilePlaceables(placeablesIds);
             const d = canvas.dimensions;
-            this.offsetPlaceables(placeables, {x: tile.position._x - d.paddingX, y: tile.position._y - d.paddingY});
-            isVisiblePlaceables(placeables, true);
+            const placeablesIds = tile.document.getFlag("scene-tiler", "entities");
+            const offsetObj = {
+                vector: {x: tile.position._x - d.paddingX, y: tile.position._y - d.paddingY},
+                placeablesIds: placeablesIds,
+                placeables: null
+            }
+            offsetPlaceablesObjArray.push(offsetObj);
         }
 
-        await canvas.scene.setFlag(ModuleName, "ActiveScene", tilerTileId);
+        SceneScroller.offsetPlaceables(offsetPlaceablesObjArray, {visible: true});
+
+
     }
 }
