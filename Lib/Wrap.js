@@ -3,12 +3,12 @@ import { SceneScroller } from "./SceneScroller.js";
 import { socketWrapper, msgDict } from "./Socket.js";
 import { log, resetMainScene } from "./Functions.js";
 
-/** LibWrapper initialized on 'init' hook.  (can also work on 'ready' hook) See ss-initialize.js
- * 
- *  When Scene-Scroller moves placeables around in the scene, or changes the size of the scene,
- *  a draw() would occur which would tear down the whole scene and redraw it causing a noticeable
- *  'hiccup' in the visuals.  This wrapper avoids this redraw by removing the placeables info from 
- *  scene#_onUpdate, which would have triggered a canvas#draw().
+/** LibWrappers are initialized on 'init' hook.  (can also work on 'ready' hook) See ss-initialize.js */
+  
+ /**  When Scene-Scroller moves placeables around in the scene, or changes the size of the scene,
+ *    a draw() would occur which would tear down the whole scene and redraw it causing a noticeable
+ *    'hiccup/flicker' in the visuals.  This wrapper avoids this redraw by removing the placeables info from 
+ *    scene#_onUpdate, which is what triggers a canvas#draw().
  */
 export function scene_onupdate() {
         libWrapper.register(ModuleName, 'Scene.prototype._onUpdate', function mySceneOnUpdate(wrapped, ...args) {
@@ -29,6 +29,9 @@ export function scene_onupdate() {
         }, 'WRAPPER');
 }
 
+/** The ClockwiseSweepPolygon.testWallInclusion method checks to see what walls are visible and excludes those
+ *  that are not.  This wrapper causes the walls that are part of a hidden sub-scene to also be excluded.
+ */
 export function myTestWallInclusion() {
     function testWall(wall) {
         const subSceneIds = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
@@ -49,6 +52,9 @@ export function myTestWallInclusion() {
     }, 'WRAPPER');
 }
 
+/** The Scene Scroller module will wait until a token animation finishes before updating the scene to represent the
+ *  new sub-scene the token has landed on.
+ */
 export function updateToken() {
     libWrapper.register(ModuleName, 'Token.prototype.animateMovement', async function myAnimateMovement(wrapped, ...args) {
         if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
@@ -62,6 +68,7 @@ export function updateToken() {
     }, 'WRAPPER')
 }
 
+/** Door Icons need to be hidden for sub-scenes that are not activated/visible. */
 export function isDoorVisible() {
     libWrapper.register(ModuleName, 'DoorControl.prototype.isVisible', function myDoorIsVisible(wrapped, ...args) {
         if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);

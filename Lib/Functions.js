@@ -23,6 +23,8 @@ export function log(force, ...args) {
  * @param {string}  pack    - The name of the compendium pack
  * @param {string}  scene   - The name of the scene in the above compendium pack
  * @returns {object}        - SceneDocument?
+ * 
+ * NOTE: Copied from Scene Zoetrope module.  I don't think this is used?
  */
  export async function getSource(pack, scene) {
     log(false, "Executing 'getSource' function.");
@@ -35,7 +37,7 @@ export function log(force, ...args) {
 }
 
 /**
- * A function that clears all the placeable objects referenced by the sub-scene (Scene Tiler tile), then deletes the tile.
+ * A function that clears all the placeable objects referenced by the sub-scene, then deletes the tile.
  * @param {Tile}    tile        - The Scene Tiler tile to be deleted.
  * @return {void}
  */
@@ -95,12 +97,13 @@ export async function refreshSceneAfterResize(size) {
 
     canvas.stage.hitArea = canvas.dimensions.rect;
     canvas.templates.hitArea = canvas.dimensions.rect;
+    // Don't like this.  Has to be a more granular way?
     await canvas.lighting.tearDown();
     await canvas.lighting.draw();
     canvas.perception.initialize();
+
     canvas.sight.hitArea = canvas.dimensions.rect;
     canvas.tokens.hitArea = canvas.dimensions.rect;
-
 
     canvas.grid.draw();
     canvas.background.drawOutline(canvas.outline);
@@ -110,7 +113,6 @@ export async function refreshSceneAfterResize(size) {
 }
 
 /** This function pans the scene by the same amount as the input vector
- *  It is a separate function because it will have to be called by the clients.
  *  @param {Object}         vector          - of the form {x: <Number>, y: <Number>}
  *  @return {void}
  */
@@ -125,7 +127,7 @@ export async function vectorPan(vector) {
 }
 
 /** A function that will resize the scene, and translate all placeables back to a determined coordinate.
- *  Core will propagate this scene size change to all clients.
+ *  Core WILL propagate this scene size change to all clients.
  *  Core will NOT translate the placeables for every client!
  *  @param {Object}         size        - An object with form {width: <Number>, height: <Number>}
  *  @return {void}
@@ -216,7 +218,8 @@ async function largestSceneSize(scn, actvTiles) {
         if (newHeight > sceneDimensions.height) sceneDimensions.height = newHeight;
     }
 
-    // Make sure the sceneDimensions are multipls of grid.size
+    // Make sure the sceneDimensions are multiples of grid.size
+    // TODO: Not sure this is necessary...
     sceneDimensions.width = Math.ceil(sceneDimensions.width / d.size) * d.size;
     sceneDimensions.height = Math.ceil(sceneDimensions.height / d.size) * d.size;
 
@@ -278,7 +281,7 @@ export async function createTilerTile(source) {
 
     const d = canvas.dimensions;
 
-    // The scene tiler module will create a tile out of the selected compendium scene, placing the top left corner at grid 1 x grid 1.
+    // The scene tiler module will create a tile out of the selected compendium scene, placing the top left corner at grid 0 x grid 0.
     const myTile = await SceneTiler.create(source, {x: d.paddingX, y: d.paddingY, populate: true});
     if ( !myTile ) {
         log(false, "Scene Tiler failed to create a tile.")
@@ -289,7 +292,7 @@ export async function createTilerTile(source) {
     const isTransfer = await transferCompendiumSceneFlags(source, myTile);
     if ( !isTransfer) return false;
 
-    // Update main scene flags with the array of created Scene Tiler tiles.
+    // Update main scene flags with the array of created sub-scenes.
     let mainSceneFlags = foundry.utils.deepClone(SceneScroller.sceneScrollerSceneFlags.SceneTilerTileIDsArray);
     const isFlags = canvas.scene.data.flags.hasOwnProperty(ModuleName);
     if ( isFlags ) {
@@ -301,6 +304,7 @@ export async function createTilerTile(source) {
 
     // If necessary, resize the scene to fit the largest of: any tile plus all it's linked tiles.
     // TO-DO: Debounce this so it only runs after all tiles are created.
+    //        Or have createTilerTile accept an array of tiles to create.  Do those first, then finish with the following.
     const isResize = await largestSceneSize(canvas.scene, mainSceneFlags);
     if (!isResize) {
         log(false, "Failed to resize the main Scene Scroller scene.");
@@ -318,7 +322,7 @@ export function resetMainScene() {
 
     log(false, "Executing 'resetMainScene' function.");
 
-    // Get ID's for all sub-scenes (Scene Tiler tiles) in the viewport (main Foundry scene).
+    // Get ID's for all sub-scenes in the viewport.
     const tilerTileIDsArr = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
     // Map tilerTileIDsArr to convert to tile objects
     const d = canvas.dimensions;
@@ -417,7 +421,7 @@ export async function preUpdateTokenFlags(token, data, options, id) {
     if ( data.x === d.paddingX && data.y === d.paddingY) return;
 
     // There is a change representing token movement.
-    // If the token will finish in a new sub-scene (scene-tiler tile), execute a different set of updates:
+    // If the token will finish in a new sub-scene, execute a different set of updates:
     const currLoc = token.getFlag(ModuleName, "inTileLoc");
     const dest = {
         x: data.hasOwnProperty("x") ? data.x : token.data.x,
@@ -562,7 +566,7 @@ function isEndNewTile(token, destination) {
     const onTileId = token.getFlag(ModuleName, "CurrentTile");
     const onTile = canvas.background.get(onTileId);
 
-    // Get the sub-scene (Scene Tiler tile) ID's from scene flags
+    // Get the sub-scene ID's from scene flags
     const subSceneIds = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
     // filter out all sub-scenes the token will not be occupying
     const subScenesContainToken = subSceneIds.map(id => {
@@ -579,7 +583,6 @@ function isEndNewTile(token, destination) {
     if ( subScenesContainToken.length === 1 && subScenesContainToken[0].id === onTile.id ) return false;  // The only tile in the array is the one already in token flags.  No need to proceed.
 
     // If there's one or more tiles in the array and it's not the one currently in token flags
-    ui.notifications.info("New Tile!");
     return subScenesContainToken
 }
 
@@ -592,8 +595,7 @@ const debounceTileFlagUpdate = foundry.utils.debounce(async (tile, token) => {
     await token.document.setFlag(ModuleName, "inTileLoc", newLoc)
     resetMainScene();
     await SceneScroller.displaySubScenes(tile.id);
-    ui.notifications.info("Debounce triggered.")
-}, 1000);
+}, 500);
 
 function newTile_UpdateFlags(token, tiles) {
 
