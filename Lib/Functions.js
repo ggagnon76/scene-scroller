@@ -24,7 +24,6 @@ export function log(force, ...args) {
  * @param {string}  scene   - The name of the scene in the above compendium pack
  * @returns {object}        - SceneDocument?
  * 
- * NOTE: Copied from Scene Zoetrope module.  I don't think this is used?
  */
  export async function getSource(pack, scene) {
     log(false, "Executing 'getSource' function.");
@@ -93,16 +92,21 @@ export async function refreshSceneAfterResize(size) {
         placeablesIds: null,
         placeables: getAllPlaceables()
     }
-    SceneScroller.offsetPlaceables(offsetObj, {save: true, wallHome: true})
+    await SceneScroller.offsetPlaceables(offsetObj, {save: true, wallHome: true})
 
     canvas.stage.hitArea = canvas.dimensions.rect;
     canvas.templates.hitArea = canvas.dimensions.rect;
+
     // Don't like this.  Has to be a more granular way?
     await canvas.lighting.tearDown();
     await canvas.lighting.draw();
     canvas.perception.initialize();
 
+    canvas.sight.width = canvas.dimensions.width;
+    canvas.sight.height = canvas.dimensions.height;
     canvas.sight.hitArea = canvas.dimensions.rect;
+    canvas.sight.draw();
+
     canvas.tokens.hitArea = canvas.dimensions.rect;
 
     canvas.grid.draw();
@@ -267,58 +271,68 @@ async function transferCompendiumSceneFlags(source, tile) {
 /**
  * Creates a tile from a compendium scene via Scene Tiler module.
  * Then transfer compendium scene flags to the tile.
- * @param {Scene}           source          - Compendium scene to be made into a tile.
- * @return {Tile|false}                     - The tile created by Scene Tiler
+ * @param {Object[]|Object}         data        - Compendium scene to be made into a tile.
+ * @param {Boolean}                 activeTile  - (Optional) Boolean to trigger adding the sub-scene ID to scene flags. Default false.
+ * @param {Boolean}                 resize      - (Optional) Boolean to trigger resizing the scene.  Default true.
+ * @return {Boolean}                            - False if any part fails.
  */
-export async function createTilerTile(source) {
-
-    log(false, "Executing 'createTilerTile' function.");
+export async function createTilerTile(sources, activeTile = false, resize = true) {
 
     if (!game.user.isGM) {
         log(false, "A non-GM user triggered the createTilerTile() function.");
-        return false;
+        return;
     }
+
+    sources = sources instanceof Array ? sources : [sources];
+
+    log(false, "Executing 'createTilerTile' function.");
 
     const d = canvas.dimensions;
-
-    // The scene tiler module will create a tile out of the selected compendium scene, placing the top left corner at grid 0 x grid 0.
-    const myTile = await SceneTiler.create(source, {x: d.paddingX, y: d.paddingY, populate: true});
-    if ( !myTile ) {
-        log(false, "Scene Tiler failed to create a tile.")
-        return false;
-    }
-
-    // Transfer flags from compendium scene (source) and add them to myTile.
-    const isTransfer = await transferCompendiumSceneFlags(source, myTile);
-    if ( !isTransfer) return false;
-
-    // Update main scene flags with the array of created sub-scenes.
     let mainSceneFlags = foundry.utils.deepClone(SceneScroller.sceneScrollerSceneFlags.SceneTilerTileIDsArray);
     const isFlags = canvas.scene.data.flags.hasOwnProperty(ModuleName);
     if ( isFlags ) {
         mainSceneFlags = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
     }
 
-    mainSceneFlags.push(myTile.id);
-    await canvas.scene.setFlag(ModuleName, "SceneTilerTileIDsArray", mainSceneFlags)
+    // The scene tiler module will create tile(s) (sub-scenes) out of the selected compendium scene(s), placing the top left corner at grid 0 x grid 0.
+    for (const source of sources) {
+        const myTile = await SceneTiler.create(source, {x: d.paddingX, y: d.paddingY, populate: true});
+        if ( !myTile ) {
+            log(false, "Scene Tiler failed to create a tile.")
+            return false;
+        }
 
-    // If necessary, resize the scene to fit the largest of: any tile plus all it's linked tiles.
-    // TO-DO: Debounce this so it only runs after all tiles are created.
-    //        Or have createTilerTile accept an array of tiles to create.  Do those first, then finish with the following.
-    const isResize = await largestSceneSize(canvas.scene, mainSceneFlags);
-    if (!isResize) {
-        log(false, "Failed to resize the main Scene Scroller scene.");
-        await deleteTilerTile(myTile);
-        return false;
+        // Transfer flags from compendium scene (source) and add them to myTile.
+        const isTransfer = await transferCompendiumSceneFlags(source, myTile);
+        if ( !isTransfer) return false;
+
+        mainSceneFlags.push(myTile.id);
+
+        if ( activeTile ) canvas.scene.setFlag(ModuleName, "ActiveScene", myTile.id)
+
+        log(true, "Scene-Tiler tile [" + myTile.id + "] created in scene [" + canvas.scene.id + "].");
     }
 
-    return myTile;
+    // Update main scene flags with the array of created sub-scenes.
+    await canvas.scene.setFlag(ModuleName, "SceneTilerTileIDsArray", mainSceneFlags);
+
+
+    // If necessary, resize the scene to fit the largest of: any tile plus all it's linked tiles.
+    if ( resize ) {
+        const isResize = await largestSceneSize(canvas.scene, mainSceneFlags);
+        if (!isResize) {
+            log(false, "Failed to resize the main Scene Scroller scene.");
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /** When the viewport is showing sub-scenes, this function will reset everything to their home positions
  *  @return {void}  
  */
-export function resetMainScene() {
+export async function resetMainScene() {
 
     log(false, "Executing 'resetMainScene' function.");
 
@@ -351,7 +365,7 @@ export function resetMainScene() {
         offsetPlaceablesObjArray.push(offsetObj);
     }
 
-    SceneScroller.offsetPlaceables(offsetPlaceablesObjArray, {visible: false, wallHome: true});
+    await SceneScroller.offsetPlaceables(offsetPlaceablesObjArray, {visible: false, wallHome: true});
 }
 
 /** This function will convert the array of placeable ID's obtained from the Scene Tiler flags
@@ -490,10 +504,11 @@ export async function controlToken(token, isControlled) {
     const tokenActiveScene = token.document.getFlag(ModuleName, "CurrentTile");
     const viewportActiveScene = canvas.scene.getFlag(ModuleName, "ActiveScene");
     if ( tokenActiveScene !== viewportActiveScene) {
-        resetMainScene();
+        await resetMainScene();
         const destTile = token.data.flags[ModuleName].CurrentTile;
         await SceneScroller.displaySubScenes(destTile);
     }
+    canvas.sight._createCachedMask();
     SceneScroller.controlToken.render(true);
 }
 
@@ -593,7 +608,7 @@ const debounceTileFlagUpdate = foundry.utils.debounce(async (tile, token) => {
         y: token.data.y - tile.position._y
     }
     await token.document.setFlag(ModuleName, "inTileLoc", newLoc)
-    resetMainScene();
+    await resetMainScene();
     await SceneScroller.displaySubScenes(tile.id);
 }, 500);
 

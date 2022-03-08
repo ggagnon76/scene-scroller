@@ -120,16 +120,16 @@ export class SceneScroller {
             tile._createAlphaMap({keepPixels: true});
         }
 
+        const activeSceneID = canvas.scene.getFlag(ModuleName, "ActiveScene");
+        // Display the main sub-scene
+        await SceneScroller.displaySubScenes(activeSceneID, true, true);
+
         if ( game.user.isGM ) {
             SceneScroller.controlToken = new ScrollerViewSubSceneSelector({}, {left: ui.sidebar._element[0].offsetLeft - 205, top: 3}).render(true);
         } else {
             // Look for for all tokens with at least permission level 'viewable'
             // Then check for array length.  If length 1 or greater, launch sub-scene selector window.
         }
-
-        const activeSceneID = canvas.scene.getFlag(ModuleName, "ActiveScene");
-        // Display the main sub-scene
-        await SceneScroller.displaySubScenes(activeSceneID, true, true);
    }
 
     /**
@@ -159,60 +159,64 @@ export class SceneScroller {
         }
 
         // Import the compendium scene as a tile
-        const myTile = await createTilerTile(source);
-        if ( !myTile ) {
+        const isTile = await createTilerTile(source, true, false);
+        if ( !isTile ) {
             log(false, "Scene Scroller initialization failed.  Source object passed to createTilerTile():")
             log(false, source);
             ui.notifications.error("Scene Scroller scene initialization failed.")
             return;
         }
 
-        log(true, "Scene [" + canvas.scene.id + "] initialized as a Scene Scroller scene.")
+        log(true, "Scene [" + canvas.scene.id + "] initialized as a Scene Scroller scene.");
 
-        // Set the flag in the canvas viewport identifying this sub-scene as the active one.
-        await canvas.scene.setFlag(ModuleName, "ActiveScene", myTile.id)
+        const myTileId = canvas.scene.getFlag(ModuleName, "ActiveScene");
+        const myTile = canvas.background.get(myTileId);
 
-        // TO-DO:  spawn all the linked tiles of this active sub-scene.
-        //const linkedSceneIDs = myTile.getFlag(ModuleName, "LinkedTiles");
-        //for (const sceneID of linkedSceneIDs) {
-        //    await this.spawnLinkedTile(sceneID.SceneUUID)
-        //}
+        // Create all the linked sub-scenes of this active sub-scene.
+        const linkedSceneIDs = myTile.document.getFlag(ModuleName, "LinkedTiles");
+        await this.spawnLinkedTile(linkedSceneIDs)
 
-        // This will position, hide/show all placeables, change viewport size, etc.  See onReady().
-        SceneScroller.onReady()
+        Hooks.once('updateScene', async () => {
+            // This will position, hide/show all placeables. See onReady().
+            await SceneScroller.onReady()
+        });
     }
 
     /**
      * This method will be invoked by initialize and when a sub-scene becomes the active scene.
      * TODO: This method may also be invoked by a trigger (button, condition, etc...) 
-     * TODO: Make this accept an array of sceneUUID's and create them all at once.
-     * @param {String}      sceneUUID      - a UUID identifying a scene in a compendium.
+     * @param {Object[]|Object}      data      - a UUID or an array of UUID's identifying scene(s) in a compendium.
      * @return {void}
      */
-    static async spawnLinkedTile(sceneUUID) {
-
-        log(false, "Executing 'spawnLinkedTile' method.");
+    static async spawnLinkedTile(data) {
 
         // Just in case...
         if (!game.user.isGM) return;
 
-        const source = await fromUuid(sceneUUID);
-        if (source === null) {
-            log(false, "Linked scene could not be found via the UUID.");
-            log(false, sceneUUID);
-            return;
+        log(false, "Executing 'spawnLinkedTile' method.");
+
+        data = data instanceof Array ? data : [data];
+
+        const sourceArray = [];
+
+        for (const obj of data) {
+            const source = await fromUuid(obj.SceneUUID);
+            if (source === null) {
+                log(false, "Linked scene could not be found via the UUID.");
+                log(false, sceneUUID);
+                return;
+            }
+            sourceArray.push(source);
         }
 
-        // Import the compendium scene as a tile
-        const myTile = await createTilerTile(source);
+        // Import the compendium scene(s) as sub-scene(s).
+        const myTile = await createTilerTile(sourceArray);
         if ( !myTile ) {
             log(false, "Spawning linked tile failed.  Source object passed to createTilerTile():");
-            log(false, source);
+            log(false, sourceArray);
             ui.notifications.error("Spawning linked compendium scene failed.")
             return;
         }
-
-        log(true, "Scene-Tiler tile [" + myTile.id + "] created in scene [" + canvas.scene.id + "].");
     }
 
     /** A method that will offset selected placeables by a vector.
@@ -298,7 +302,7 @@ export class SceneScroller {
                                     placeable.updateSource({defer: true});
                                     break;
                                 case "templates":
-                                    placeable.draw();
+                                    await placeable.draw();
                                     break;
                             }
                         }
@@ -434,7 +438,7 @@ export class SceneScroller {
         }
 
         // Reset every subscene and placeable to their home position
-        resetMainScene();
+        await resetMainScene();
 
         // This is the main sub-scene:
         const mainTile = canvas.background.get(tilerTileId);
@@ -536,6 +540,6 @@ export class SceneScroller {
             offsetPlaceablesObjArray.push(offsetObj);
         }
 
-        SceneScroller.offsetPlaceables(offsetPlaceablesObjArray, {visible: true});
+        await SceneScroller.offsetPlaceables(offsetPlaceablesObjArray, {visible: true});
     }
 }
