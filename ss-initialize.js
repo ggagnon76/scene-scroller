@@ -53,6 +53,7 @@ Hooks.on('controlToken', controlToken);
 Hooks.on('preUpdateToken', preUpdateTokenFlags);
 // Update the sub-scene selection window when a token is deleted.
 Hooks.on('deleteToken', () => {
+    if ( !SceneScroller.isScrollerScene(canvas.scene) ) return;
     log(false, "Hook content for 'deleteToken' executing.");
     SceneScroller.controlToken.render(true)
 });

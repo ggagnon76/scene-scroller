@@ -98,9 +98,8 @@ export async function refreshSceneAfterResize(size) {
     canvas.templates.hitArea = canvas.dimensions.rect;
 
     // Don't like this.  Has to be a more granular way?
-    await canvas.lighting.tearDown();
+    //await canvas.lighting.tearDown();
     await canvas.lighting.draw();
-    canvas.perception.initialize();
 
     canvas.sight.width = canvas.dimensions.width;
     canvas.sight.height = canvas.dimensions.height;
@@ -351,6 +350,9 @@ export async function resetMainScene() {
             x: (d.paddingX) - tile.position._x,
             y: (d.paddingY) - tile.position._y 
         }
+
+        if ( vector.x === 0 && vector.y === 0) continue;
+        
         tile.position.set(d.paddingX, d.paddingY);
         tile.data.x = tile.data._source.x = d.paddingX;
         tile.data.y = tile.data._source.y = d.paddingY;
@@ -491,6 +493,8 @@ export function moveTokensLocal(data) {
  */
 export async function controlToken(token, isControlled) {
 
+    if ( !SceneScroller.isScrollerScene(canvas.scene) ) return;
+
     log(false, "Executing 'controlToken' function.");
 
     // If the token is being released
@@ -608,13 +612,37 @@ const debounceTileFlagUpdate = foundry.utils.debounce(async (tile, token) => {
         y: token.data.y - tile.position._y
     }
     await token.document.setFlag(ModuleName, "inTileLoc", newLoc)
-    await resetMainScene();
-    await SceneScroller.displaySubScenes(tile.id);
+
+    if ( game.user.isGM ) {
+        await canvas.scene.setFlag(ModuleName, "ActiveScene", tile.id)
+    }
+
+    const linkedTilesIds = tile.document.getFlag(ModuleName, "LinkedTiles");
+    const subSceneIds = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
+    const subScenes = subSceneIds.map(id => {
+        return canvas.background.get(id).document.getFlag("scene-tiler", "scene");
+    })
+    const forTileSpawn = [];
+
+    for (const tileId of linkedTilesIds) {
+        if (subScenes.includes(tileId.SceneUUID) ) continue;
+        forTileSpawn.push(tileId);
+    }
+
+    if ( forTileSpawn.length ) {
+        await SceneScroller.spawnLinkedTile(forTileSpawn);
+
+        Hooks.once('updateScene', async () => {
+            await resetMainScene();
+            // This will position, hide/show all placeables. See onReady().
+            await SceneScroller.onReady()
+        });
+    }
 }, 500);
 
 function newTile_UpdateFlags(token, tiles) {
 
-    log(false, "Executing 'newTile_UpdateFlags' funciton.");
+    log(false, "Executing 'newTile_UpdateFlags' function.");
 
     const currTileId = token.document.getFlag(ModuleName, "CurrentTile");
     const currTile = canvas.background.get(currTileId);
