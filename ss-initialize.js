@@ -1,7 +1,7 @@
-import { message_handler } from "./lib/Socket.js";
-import { SceneScroller } from "./lib/SceneScroller.js";
-import * as wrapper from "./lib/Wrap.js"
-import { log, controlToken, preUpdateTokenFlags, tokenCreated } from "./lib/Functions.js"
+import { message_handler } from "./Lib/Socket.js";
+import { SceneScroller } from "./Lib/SceneScroller.js";
+import * as wrapper from "./Lib/Wrap.js"
+import { log, controlToken, preUpdateTokenFlags, tokenCreated } from "./Lib/Functions.js"
 
 // Boolean to be used for any entry function that will launch Scene Scroller methods or functions.
 // If isReady is false (not ready), then the module should offer not functionality at all.
