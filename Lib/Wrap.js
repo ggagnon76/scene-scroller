@@ -10,7 +10,7 @@ import { log, resetMainScene } from "./Functions.js";
  *    'hiccup/flicker' in the visuals.  This wrapper avoids this redraw by removing the placeables info from 
  *    scene#_onUpdate, which is what triggers a canvas#draw().
  */
-export function scene_onupdate() {
+export function scene_onupdate(type) {
         libWrapper.register(ModuleName, 'Scene.prototype._onUpdate', function mySceneOnUpdate(wrapped, ...args) {
             const [data, options, userId] = args;
             if (!SceneScroller.PreventCanvasDraw) return wrapped(data, options, userId);
@@ -26,13 +26,13 @@ export function scene_onupdate() {
 
             socketWrapper(msgDict.preventCanvasDrawFalse)
             return wrapped(data, options, userId);
-        }, 'WRAPPER');
+        }, type);
 }
 
 /** The ClockwiseSweepPolygon.testWallInclusion method checks to see what walls are visible and excludes those
  *  that are not.  This wrapper causes the walls that are part of a hidden sub-scene to also be excluded.
  */
-export function myTestWallInclusion() {
+export function myTestWallInclusion(type) {
     function testWall(wall) {
         const subSceneIds = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");
         let wallArr = []
@@ -49,13 +49,13 @@ export function myTestWallInclusion() {
     libWrapper.register(ModuleName, 'ClockwiseSweepPolygon.testWallInclusion', function isWallFiltered(wrapped, ...args) {
         if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
         return wrapped(...args) && testWall(args[0])
-    }, 'WRAPPER');
+    }, type);
 }
 
 /** The Scene Scroller module will wait until a token animation finishes before updating the scene to represent the
  *  new sub-scene the token has landed on.
  */
-export function updateToken() {
+export function updateToken(type) {
     libWrapper.register(ModuleName, 'Token.prototype.animateMovement', async function myAnimateMovement(wrapped, ...args) {
         if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
         return wrapped(...args).then(() => {
@@ -65,7 +65,7 @@ export function updateToken() {
             SceneScroller.displaySubScenes(SceneScroller.updateToken);
             SceneScroller.updateToken = null;
         })
-    }, 'WRAPPER')
+    }, type)
 }
 
 /** Door Icons need to be hidden for sub-scenes that are not activated/visible. */
@@ -76,5 +76,5 @@ export function isDoorVisible() {
         const isVisibleTiles = canvas.background.placeables.filter(t => t.visible === true);
         if ( !isVisibleTiles.length ) return false;
         return isVisible
-    }, 'WRAPPER')
+    }, type)
 }
