@@ -250,7 +250,7 @@ async function transferCompendiumSceneFlags(source, tile) {
         return false;
     }
 
-    const flags = source.getFlag("scene-scroller-maker", "sceneScrollerTilerFlags");
+    const flags = source.getFlag("scene-scroller-maker", "LinkedTiles");
     if ( !flags ) {
         log(false, "The compendium scene has no links in flags or the getFlag method failed.");
         log(false, source);
@@ -258,9 +258,7 @@ async function transferCompendiumSceneFlags(source, tile) {
         return false;
     }
 
-    for (const [k,v] of Object.entries(flags)) {
-        await tile.setFlag(ModuleName, k, v);
-    }
+    await tile.setFlag(ModuleName, "LinkedTiles", flags)
 
     await tile.setFlag(ModuleName, "SceneName", source.name)
 
