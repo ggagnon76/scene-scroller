@@ -1,5 +1,4 @@
 import { ModuleName, ModuleTitle } from "../ss-initialize.js";
-import { log } from "./Lib/Exported_Functions.js";
 
 /** A wrapper function that works with the Foundryvtt-devMode module to output debugging info
  *  to the console.log, when a debugging boolean is activated in module settings.

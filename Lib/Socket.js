@@ -63,7 +63,7 @@ export async function message_handler(request) {
             await SceneScroller.offsetPlaceables(placeables, vector, save);
             break;
         default:
-            log(false, "Did not find action in message_handler() function.")
-            log(false, "Requested action: " + request.action) 
+            utils.log(false, "Did not find action in message_handler() function.")
+            utils.log(false, "Requested action: " + request.action) 
     }
 }

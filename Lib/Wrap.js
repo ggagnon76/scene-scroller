@@ -1,7 +1,7 @@
 import { ModuleName } from "../ss-initialize.js";
 import { SceneScroller } from "./SceneScroller.js";
 import { socketWrapper, msgDict } from "./Socket.js";
-import { log, resetMainScene } from "./Functions.js";
+import { log, resetMainScene } from "./functions.js";
 
 /** LibWrappers are initialized on 'init' hook.  (can also work on 'ready' hook) See ss-initialize.js */
   
@@ -69,7 +69,7 @@ export function updateToken(type) {
 }
 
 /** Door Icons need to be hidden for sub-scenes that are not activated/visible. */
-export function isDoorVisible() {
+export function isDoorVisible(type) {
     libWrapper.register(ModuleName, 'DoorControl.prototype.isVisible', function myDoorIsVisible(wrapped, ...args) {
         if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
         const isVisible = wrapped(...args);
