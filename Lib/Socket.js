@@ -1,5 +1,4 @@
-import * as utils from "./Functions.js"
-import { SceneScroller } from "./SceneScroller.js"
+import * as utils from "./functions.js"
 import { SocketModuleName } from "../ss-initialize.js"
 
 /** A dictionary of actions.  Avoids typos and VS Code autocompletes, making it much easier to code. */

@@ -16,3 +16,8 @@ import { ModuleName, ModuleTitle } from "../ss-initialize.js";
         console.log(ModuleTitle, " | ", ...args)
     }
 }
+
+export function isScrollerScene(scene) {
+    if (scene?.data?.flags?.hasOwnProperty(ModuleName)) return true;
+    return false;
+}

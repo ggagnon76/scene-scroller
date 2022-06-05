@@ -47,15 +47,15 @@ export class SceneScroller_Flags {
         return this.viewport ?? SCSC_Flag_Schema.viewportFlags;
     }
 
-    get subSceneFlags(scnID) {
+    subSceneFlags(scnID) {
         return this.subScene.get(scnID) ?? SCSC_Flag_Schema.tileFlags;
     }
 
-    get tokenFlags(tknID) {
+    tokenFlags(tknID) {
         return this.tokens.get(tknID) ?? SCSC_Flag_Schema.tokenFlags;
     }
 
-    async set setActiveScene(tileID) {
+    async setActiveScene(tileID) {
         if ( !SceneScroller_Flags.isScrollerScene ) {
             ui.notifications.warn("Current scene has not been initialized as a Scene Scroller Viewport.");
             return;
@@ -64,7 +64,7 @@ export class SceneScroller_Flags {
         await canvas.scene.setFlag(ModuleName, "ActiveScene", tileID);
     }
 
-    async set addSubSceneInViewport(tileID) {
+    async addSubSceneInViewport(tileID) {
         if ( !SceneScroller_Flags.isScrollerScene ) {
             ui.notifications.warn("Current scene has not been initialized as a Scene Scroller Viewport.");
             return;
@@ -75,7 +75,7 @@ export class SceneScroller_Flags {
         await canvas.scene.setFlag(ModuleName, "LinkedTiles", [...currSet]);
     }
 
-    async set deleteSubSceneInViewport(tileID) {
+    async deleteSubSceneInViewport(tileID) {
         if ( !SceneScroller_Flags.isScrollerScene ) {
             ui.notifications.warn("Current scene has not been initialized as a Scene Scroller Viewport.");
             return;
@@ -86,7 +86,7 @@ export class SceneScroller_Flags {
         await canvas.scene.setFlag(ModuleName, "LinkedTiles", [...currSet]);
     }
 
-    async set addSubSceneInTile(tileDoc, obj) {
+    async addSubSceneInTile(tileDoc, obj) {
         if ( !tileDoc.data.flags?.hasOwnProperty("scene-tiler") ) {
             // This is not a Scene Tiler tile.
             ui.notifications.warn("This tile is not a valid destination for Scene Scroller flags.");
@@ -135,9 +135,9 @@ export class SceneScroller_Flags {
     }
 
     async initialize() {
-        this.viewport = {
-            LinkedTiles: canvas.scene.getFlag(ModuleName, "LinkedTiles"),
-            ActiveScene: canvas.scene.getFlag(ModuleName, "ActiveTile")
+        const viewportKeys = Object.keys(SCSC_Flag_Schema.viewportFlags);
+        for (const k of viewportKeys) {
+            this.viewport[k] = canvas.scene.getFlag(ModuleName, k)
         }
 
         for (const tileID of this.viewport.LinkedTiles) {

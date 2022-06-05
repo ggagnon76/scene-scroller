@@ -1,7 +1,6 @@
 import { ModuleName } from "../ss-initialize.js";
-import { SceneScroller } from "./SceneScroller.js";
 import { socketWrapper, msgDict } from "./Socket.js";
-import { log, resetMainScene } from "./functions.js";
+import { log, isScrollerScene } from "./functions.js";
 
 /** LibWrappers are initialized on 'init' hook.  (can also work on 'ready' hook) See ss-initialize.js */
   
@@ -47,7 +46,7 @@ export function myTestWallInclusion(type) {
     }
 
     libWrapper.register(ModuleName, 'ClockwiseSweepPolygon.testWallInclusion', function isWallFiltered(wrapped, ...args) {
-        if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
+        if ( !isScrollerScene(canvas.scene) ) return wrapped(...args);
         return wrapped(...args) && testWall(args[0])
     }, type);
 }
@@ -71,7 +70,7 @@ export function updateToken(type) {
 /** Door Icons need to be hidden for sub-scenes that are not activated/visible. */
 export function isDoorVisible(type) {
     libWrapper.register(ModuleName, 'DoorControl.prototype.isVisible', function myDoorIsVisible(wrapped, ...args) {
-        if ( !SceneScroller.isScrollerScene(canvas.scene) ) return wrapped(...args);
+        if ( !isScrollerScene(canvas.scene) ) return wrapped(...args);
         const isVisible = wrapped(...args);
         const isVisibleTiles = canvas.background.placeables.filter(t => t.visible === true);
         if ( !isVisibleTiles.length ) return false;

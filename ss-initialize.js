@@ -8,7 +8,7 @@ export let ssfc; // Scene Scroller Flags Cache
 
 import * as monkeypatch from "./Lib/Wrap.js"
 import { message_handler } from "./Lib/Socket.js";
-import { SCSC_Flag_schema, SCSC_Flags } from "./Lib/SceneScroller.js";
+import { SCSC_Flag_Schema, SceneScroller_Flags } from "./Lib/SceneScroller.js";
 import { log } from "./Lib/functions.js";
 
 Hooks.once('init', () => {
@@ -21,7 +21,7 @@ Hooks.once('init', () => {
 Hooks.once('ready', () => {
     game.socket.on(SocketModuleName, message_handler);
     game.modules.get(ModuleName).schema = SCSC_Flag_Schema;
-    ssfc = new SCSC_Flags();
+    ssfc = new SceneScroller_Flags();
 })
 
 // Ref: Foundryvtt-devMode module.
