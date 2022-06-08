@@ -1,4 +1,4 @@
-import { ModuleName } from "../ss-initialize.js";
+import { ModuleName, preventCanvasDraw } from "../ss-initialize.js";
 import { socketWrapper, msgDict } from "./Socket.js";
 import { log, isScrollerScene } from "./functions.js";
 
@@ -12,7 +12,7 @@ import { log, isScrollerScene } from "./functions.js";
 export function scene_onupdate(type) {
         libWrapper.register(ModuleName, 'Scene.prototype._onUpdate', function mySceneOnUpdate(wrapped, ...args) {
             const [data, options, userId] = args;
-            if (!SceneScroller.PreventCanvasDraw) return wrapped(data, options, userId);
+            if (!preventCanvasDraw) return wrapped(data, options, userId);
             delete data?.drawings;
             delete data?.lights;
             delete data?.sounds;

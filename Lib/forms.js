@@ -1,6 +1,5 @@
 import { ModuleName } from "../ss-initialize.js";
-import { getSource } from "./Functions.js";
-import { SceneScroller } from "./SceneScroller.js";
+import { getUUID } from "./functions.js";
 
 /** Form application that will be invoked when the DM activates a scene to become
  *  a Scene-Scroller viewport.
@@ -22,7 +21,7 @@ export class ScrollerInitiateScene extends FormApplication {
       })
     }
   
-    async close(options={}) {
+    close(options={}) {
       if ( !options.resolved ) this.callback(null)
       return super.close(options);
     }
@@ -64,7 +63,7 @@ export class ScrollerInitiateScene extends FormApplication {
       super.activateListeners(html);
     }
   
-    async _updateObject(event, formData) {
+    _updateObject(event, formData) {
       if (!formData.z_scene_sel || formData.z_scene_sel === "no_selection") {
         if (formData.z_comp_sel === "no_selection") return
         this.compendiumChoice = formData.z_comp_sel;
@@ -72,8 +71,8 @@ export class ScrollerInitiateScene extends FormApplication {
         return;
       }
       if (formData.z_scene_sel) {
-        const source = await getSource(formData.z_comp_sel, formData.z_scene_sel);
-        this.callback(source);
+        const sourceUUID = getUUID(formData.z_comp_sel, formData.z_scene_sel);
+        this.callback(sourceUUID);
         this.close({resolved: true});
         Handlebars.unregisterHelper('comp_equal');
       }

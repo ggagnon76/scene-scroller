@@ -5,20 +5,20 @@ import { ModuleName } from "../ss-initialize.js";
  * viewport, tile and token flags.
  */
 export class SCSC_Flag_Schema {
-    /* Default flag values */
+    /* Default keys and flag values */
     static viewportFlags = {
-        SceneTilerTileIDsArray: [], // Strings of tile ID's
-        ActiveScene: ""
+        SubSceneUUIDs: [],
+        ActiveSceneUUID: ""
     }
 
-    static tileFlags = {
-        SceneUUID: "",
-        Vector: {}
+    static compendiumSceneFlags = {
+        ChildSceneUUID: "",
+        ChildVector: {}
     }
 
     static tokenFlags = {
-        CurrentTile: "",
-        inTileLoc: {},
+        CurrentSubScene: "",
+        inSubSceneLoc: {},
     }
 }
 
@@ -27,6 +27,9 @@ export class SCSC_Flag_Schema {
  */
 export class SceneScroller_Flags {
     constructor() {
+        this.viewportFlags = Object.keys(SCSC_Flag_Schema.viewportFlags);
+        this.compendiumSceneFlags = Object.keys(SCSC_Flag_Schema.compendiumSceneFlags);
+        this.tokenFlags = Object.keys(SCSC_Flag_Schema.tokenFlags);
         this.viewport = {};
         this.subScene = new Map();  // Scenes in a compendium, or Scene-Tiler tiles in the viewport
         this.tokens = new Map();
@@ -43,12 +46,12 @@ export class SceneScroller_Flags {
         return false;
     }
 
-    get viewportFlags() {
-        return this.viewport ?? SCSC_Flag_Schema.viewportFlags;
+    get getViewportFlags() {
+        return Object.keys(this.viewport).length ? this.viewport :  SCSC_Flag_Schema.viewportFlags;
     }
 
     getSubSceneFlags(scnID) {
-        return this.subScene.get(scnID) ?? SCSC_Flag_Schema.tileFlags;
+        return this.subScene.get(scnID) ?? SCSC_Flag_Schema.compendiumSceneFlags;
     }
 
     getTokenFlags(tknID) {
@@ -61,83 +64,55 @@ export class SceneScroller_Flags {
         return subScene.LinkedTiles.filter(s => s.SceneUUID === childUUID)[0].Vector;
     }
 
-    async setActiveScene(tileID) {
+    getLinkedTilesFromSubScene(subScene) {
+        return this.subScene.get(subScene).LinkedTiles
+    }
+
+    async setActiveScene(tileUUID) {
+        this.viewport[this.viewportFlags[1]] = tileUUID;
+        await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], tileUUID);
+    }
+
+    getActiveScene() {
+        return this.viewport[this.viewportFlags[1]]
+    }
+
+    async addSubSceneInViewport(tileUUID) {
         if ( !SceneScroller_Flags.isScrollerScene ) {
             ui.notifications.warn("Current scene has not been initialized as a Scene Scroller Viewport.");
             return;
         }
-        this.viewport.ActiveScene = tileID;
-        await canvas.scene.setFlag(ModuleName, "ActiveScene", tileID);
+        const currSet = new Set(this.viewport[this.viewportFlags[0]]);
+        currSet.add(tileUUID);  // Using a set makes it easy to avoid duplicates.
+        this.viewport[this.viewportFlags[0]] = [...currSet];
+        await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], [...currSet]);
     }
 
-    async addSubSceneInViewport(tileID) {
+    async deleteSubSceneInViewport(tileUUID) {
         if ( !SceneScroller_Flags.isScrollerScene ) {
             ui.notifications.warn("Current scene has not been initialized as a Scene Scroller Viewport.");
             return;
         }
-        const currSet = new Set(this.viewport.SceneTilerTileIDsArray);
-        currSet.add(tileID);  // Using a set makes it easy to avoid duplicates.
-        this.viewport.SceneTilerTileIDsArray = [...currSet];
-        await canvas.scene.setFlag(ModuleName, "SceneTilerTileIDsArray", [...currSet]);
+        const currSet = new Set(this.viewport[this.viewportFlags[0]]);
+        currSet.delete(tileUUID);
+        this.viewport[this.viewportFlags[0]] = [...currSet];
+        await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], [...currSet]);
     }
 
-    async deleteSubSceneInViewport(tileID) {
-        if ( !SceneScroller_Flags.isScrollerScene ) {
-            ui.notifications.warn("Current scene has not been initialized as a Scene Scroller Viewport.");
-            return;
-        }
-        const currSet = new Set(SceneScroller_Flags.viewportFlags.LinkedTiles);
-        currSet.delete(tileID);
-        this.viewport.LinkedTiles = [...currSet];
-        await canvas.scene.setFlag(ModuleName, "LinkedTiles", [...currSet]);
-    }
-
-    async addSubSceneInTile(tileDoc, obj) {
-        if ( !tileDoc.data.flags?.hasOwnProperty("scene-tiler") ) {
-            // This is not a Scene Tiler tile.
-            ui.notifications.warn("This tile is not a valid destination for Scene Scroller flags.");
-            return;
-        }
-        const currFlags = this.subScene.get(tileDoc.id);
-        const currMap = new Map();
-        for (const [uuid, vector] of currFlags) {
-            currMap.set(uuid, vector);
-        }
-        // Using Map to make sure no duplicate entries.
-        currMap.set(obj.SceneUUID, obj.Vector);
-        // Now refactor the map into an array of objects.
-        const finalArr = [];
-        for (const [uuid, vector] of currMap) {
-            finalArr.push({SceneUUID: uuid, Vector: vector})
-        }
-        const subScene = SCSC_Flag_Schema.subSceneFlags(tileDoc.id)
-        subScene.LinkedTiles.push(obj);
-        await tileDoc.setFlag(ModuleName, "LinkedTiles", finalArr);
-    }
-
-    async deleteSubSceneInTile(tileDoc, uuid) {
-        if ( !tileDoc.data.flags?.hasOwnProperty("scene-tiler") ) {
-            // This is not a Scene Tiler tile.
-            ui.notifications.warn("This tile does not contain any Scene Scroller flags.");
-            return;
-        }
-        const currFlags = this.subScene.get(tileDoc.id);
-        const newFlags = currFlags.filter(s => s.SceneUUID !== uuid)
-        this.subScene.delete(tileDoc.id);
-        this.subScene.set(tileDoc.id, newFlags);
-        await tileDoc.setFlag(ModuleName, "LinkedTiles", newFlags);
-    }
-
-    async setCurrentTileInToken(tokenDoc, tileID) {
+    async setActiveSubSceneInToken(tokenDoc, tileUUID) {
         const tokenFlags = SCSC_Flag_Schema.tokenFlags;
-        tokenFlags.CurrentTile = tileID;
-        await tokenDoc.setFlag(ModuleName, "CurrentTile", tileID);
+        tokenFlags[this.tokenFlags[0]] = tileUUID;
+        await tokenDoc.setFlag(ModuleName, this.tokenFlags[0], tileUUID);
+    }
+
+    getActiveSubSceneFromToken(tokID) {
+
     }
 
     async setInTileLocInToken(tokenDoc, data) {
         const tokenFlags = SCSC_Flag_Schema.tokenFlags;
-        tokenFlags.inTileLoc = data;
-        await tokenDoc.setFlag(ModuleName, "InTileLoc", data)
+        tokenFlags[this.tokenFlags[1]] = data;
+        await tokenDoc.setFlag(ModuleName, this.tokenFlags[1], data)
     }
 
     deriveOffset(links) {
@@ -165,22 +140,7 @@ export class SceneScroller_Flags {
             this.viewport[k] = canvas.scene.getFlag(ModuleName, k)
         }
 
-        for (const tileID of this.viewport[viewportKeys[0]]) {
-            const tile = canvas.background.get(tileID);
-            const linkedTiles = tile.document.getFlag(ModuleName, "LinkedTiles");
-            for (const linkedTileData of linkedTiles) {
-                const linkedTile = canvas.background.placeables.filter(t => t.document.getFlag('scene-tiler', "scene") === linkedTileData.SceneUUID)[0];
-                if ( linkedTile ) linkedTileData.TileID = linkedTile.id;
-            }
-            const deriveOffset = this.deriveOffset(linkedTiles);
-            const embedData = {
-                LinkedTiles: linkedTiles,
-                Offset: deriveOffset,
-                UUID: tile.document.getFlag("scene-tiler", "scene")
-            }
-            this.subScene.set(tile.id, embedData);
-        }
-
+        const tokenKeys = Object.keys(SCSC_Flag_Schema.tokenFlags);
         for (const tok of canvas.tokens.placeables) {
             if ( !tok.document.data.flags?.hasOwnProperty(ModuleName) ) {
                 for (const [k,v] of SCSC_Flag_Schema.tokenFlags) {
@@ -188,8 +148,8 @@ export class SceneScroller_Flags {
                 }
             }
             this.tokens.set(tok.id, {
-                CurrentTile: tok.document.getFlag(ModuleName, "CurrentTile"), 
-                inTileLoc: tok.document.getFlag(ModuleName, "InTileLoc")
+                CurrentTile: tok.document.getFlag(ModuleName, tokenKeys[0]), 
+                inTileLoc: tok.document.getFlag(ModuleName, tokenKeys[1])
             })
         }
     }

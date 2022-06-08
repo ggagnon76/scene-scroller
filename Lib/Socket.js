@@ -1,5 +1,5 @@
 import * as utils from "./functions.js"
-import { SocketModuleName } from "../ss-initialize.js"
+import { SocketModuleName, preventCanvasDraw } from "../ss-initialize.js"
 
 /** A dictionary of actions.  Avoids typos and VS Code autocompletes, making it much easier to code. */
 export const msgDict = {
@@ -19,11 +19,11 @@ export const msgDict = {
 export async function socketWrapper(requestID, data) {
     switch(requestID) {
         case msgDict.preventCanvasDrawTrue:
-            SceneScroller.PreventCanvasDraw = true;
+            preventCanvasDraw = true;
             game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawTrue});
             break;
         case msgDict.preventCanvasDrawFalse:
-            SceneScroller.PreventCanvasDraw = false;
+            preventCanvasDraw = false;
             game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawFalse});
             break;
         case msgDict.refreshAfterResize:
@@ -46,10 +46,10 @@ export async function socketWrapper(requestID, data) {
 export async function message_handler(request) {
     switch (request.action) {
         case msgDict.preventCanvasDrawTrue:
-            SceneScroller.PreventCanvasDraw = true;
+            preventCanvasDraw = true;
             break;
         case msgDict.preventCanvasDrawFalse:
-            SceneScroller.PreventCanvasDraw = false;
+            preventCanvasDraw = false;
             break;
         case msgDict.refreshAfterResize: 
             utils.refreshSceneAfterResize(request.data);
