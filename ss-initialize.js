@@ -9,7 +9,7 @@ export let ssfc; // Scene Scroller Flags Cache
 import * as monkeypatch from "./Lib/Wrap.js"
 import { message_handler } from "./Lib/Socket.js";
 import { SCSC_Flag_Schema, SceneScroller_Flags } from "./Lib/SceneScroller.js";
-import { log } from "./Lib/functions.js";
+import { log, onReady } from "./Lib/functions.js";
 
 Hooks.once('init', () => {
     monkeypatch.scene_onupdate('WRAPPER');
@@ -29,3 +29,6 @@ Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
     log(false, "Registering 'devModeReady' flag.");
     registerPackageDebugFlag(ModuleName);
 });
+
+/** Module In-Use */
+Hooks.on('ready', onReady);

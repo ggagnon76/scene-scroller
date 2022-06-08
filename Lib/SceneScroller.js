@@ -7,7 +7,7 @@ import { ModuleName } from "../ss-initialize.js";
 export class SCSC_Flag_Schema {
     /* Default flag values */
     static viewportFlags = {
-        LinkedTiles: [], // Strings of tile ID's
+        SceneTilerTileIDsArray: [], // Strings of tile ID's
         ActiveScene: ""
     }
 
@@ -27,7 +27,7 @@ export class SCSC_Flag_Schema {
  */
 export class SceneScroller_Flags {
     constructor() {
-        this.viewport = null;
+        this.viewport = {};
         this.subScene = new Map();  // Scenes in a compendium, or Scene-Tiler tiles in the viewport
         this.tokens = new Map();
 
@@ -47,12 +47,18 @@ export class SceneScroller_Flags {
         return this.viewport ?? SCSC_Flag_Schema.viewportFlags;
     }
 
-    subSceneFlags(scnID) {
+    getSubSceneFlags(scnID) {
         return this.subScene.get(scnID) ?? SCSC_Flag_Schema.tileFlags;
     }
 
-    tokenFlags(tknID) {
+    getTokenFlags(tknID) {
         return this.tokens.get(tknID) ?? SCSC_Flag_Schema.tokenFlags;
+    }
+
+    getVector(tileID, childTileID) {
+        const subScene = this.subScene.get(tileID);
+        const childUUID = this.subScene.get(childTileID).UUID;
+        return subScene.LinkedTiles.filter(s => s.SceneUUID === childUUID)[0].Vector;
     }
 
     async setActiveScene(tileID) {
@@ -69,10 +75,10 @@ export class SceneScroller_Flags {
             ui.notifications.warn("Current scene has not been initialized as a Scene Scroller Viewport.");
             return;
         }
-        const currSet = new Set(SceneScroller_Flags.viewportFlags.LinkedTiles);
+        const currSet = new Set(this.viewport.SceneTilerTileIDsArray);
         currSet.add(tileID);  // Using a set makes it easy to avoid duplicates.
-        this.viewport.LinkedTiles = [...currSet];
-        await canvas.scene.setFlag(ModuleName, "LinkedTiles", [...currSet]);
+        this.viewport.SceneTilerTileIDsArray = [...currSet];
+        await canvas.scene.setFlag(ModuleName, "SceneTilerTileIDsArray", [...currSet]);
     }
 
     async deleteSubSceneInViewport(tileID) {
@@ -134,16 +140,45 @@ export class SceneScroller_Flags {
         await tokenDoc.setFlag(ModuleName, "InTileLoc", data)
     }
 
+    deriveOffset(links) {
+        let offset = {
+            x: -Infinity,
+            y: -Infinity
+        }
+        for (const link of links) {
+            // link.Vector is the distance and direction to go from the child sub-scene top left corner
+            // to the parent sub-scene top left corner.
+            offset.x = link.Vector.x > offset.x ? link.Vector.x : offset.x;
+            offset.y = link.Vector.y > offset.y ? link.Vector.y : offset.y;
+        }
+        // In case parent sub-scene is the top left sub-scene
+        offset.x = 0 > offset.x ? 0 : offset.x,
+        offset.y = 0 > offset.y ? 0 : offset.y
+
+        const d = canvas.dimensions;
+        return {x: offset.x + d.paddingX, y: offset.y + d.paddingY};
+    }
+
     async initialize() {
         const viewportKeys = Object.keys(SCSC_Flag_Schema.viewportFlags);
         for (const k of viewportKeys) {
             this.viewport[k] = canvas.scene.getFlag(ModuleName, k)
         }
 
-        for (const tileID of this.viewport.LinkedTiles) {
+        for (const tileID of this.viewport[viewportKeys[0]]) {
             const tile = canvas.background.get(tileID);
             const linkedTiles = tile.document.getFlag(ModuleName, "LinkedTiles");
-            this.subScene.set(tile.id, linkedTiles);
+            for (const linkedTileData of linkedTiles) {
+                const linkedTile = canvas.background.placeables.filter(t => t.document.getFlag('scene-tiler', "scene") === linkedTileData.SceneUUID)[0];
+                if ( linkedTile ) linkedTileData.TileID = linkedTile.id;
+            }
+            const deriveOffset = this.deriveOffset(linkedTiles);
+            const embedData = {
+                LinkedTiles: linkedTiles,
+                Offset: deriveOffset,
+                UUID: tile.document.getFlag("scene-tiler", "scene")
+            }
+            this.subScene.set(tile.id, embedData);
         }
 
         for (const tok of canvas.tokens.placeables) {
