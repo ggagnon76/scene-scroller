@@ -60,16 +60,14 @@ export async function localResizeScene(area) {
         grid: canvas.scene.data.grid
     });
 
-    canvas.stage.hitArea = canvas.dimensions.rect;
-    canvas.templates.hitArea = canvas.dimensions.rect;
-
-    canvas.sight.width = canvas.dimensions.width;
+    const updates = ["stage", "sight", "controls", "drawings", "lighting", "notes", "sounds", "templates", "background", "foreground",  "tokens", "walls"];
     canvas.sight.height = canvas.dimensions.height;
-    canvas.sight.hitArea = canvas.dimensions.rect;
+    canvas.sight.width = canvas.dimensions.width;
+
+    for (const u of updates) {
+        canvas[u].hitArea = canvas.dimensions.rect;
+    }
     canvas.sight.draw();
-
-    canvas.tokens.hitArea = canvas.dimensions.rect;
-
     canvas.grid.draw();
     canvas.background.drawOutline(canvas.outline);
     canvas.msk.clear().beginFill(0xFFFFFF, 1.0).drawShape(canvas.dimensions.rect).endFill();
@@ -83,6 +81,90 @@ export async function localResizeScene(area) {
 /*************************************************************************************/
 /* onReady() and supporting functions */
 /*************************************************************************************/
+
+function cacheInScenePlaceables(scene, tile) {
+    const placeables = ["drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens", "walls"];
+    const pDict = {
+        drawings: {
+            doc : (data) => new DrawingDocument(data, {parent: canvas.scene}),
+            p: (doc) => new Drawing(doc),
+            cache: (d) => ssfc.addDrawing(d)
+        },
+        lights : {
+            doc : (data) => new AmbientLightDocument(data, {parent: canvas.scene}),
+            p: (doc) => new AmbientLight(doc),
+            cache: (l) => ssfc.addLight(l)
+        },
+        notes : {
+            doc : (data) => new NoteDocument(data, {parent: canvas.scene}),
+            p: (doc) => new Note(doc),
+            cache: (n) => ssfc.addNote(n)
+        },
+        sounds: {
+            doc : (data) => new SoundDocument(data, {parent: canvas.scene}),
+            p: (doc) => new Sound(doc),
+            cache: (s) => ssfc.addSound(s)
+        },
+        templates: {
+            doc : (data) => new MeasuredTemplateDocument(data, {parent: canvas.scene}),
+            p: (doc) => new MeasuredTemplate(doc),
+            cache: (t) => ssfc.addTemplate(t)
+        },
+        tiles: {
+            doc: (data) => new TileDocument(data, {parent: canvas.scene}),
+            p: (doc) => {return doc.object},
+            cache: (t) => ssfc.addTile(t)
+        },
+        tokens: {
+            doc: (data) => new TokenDocument(data, {parent: canvas.scene}),
+            p: (doc) => new Token(doc),
+            cache: (t) => ssfc.addToken(t)
+        },
+        walls: {
+            doc: (data) => new WallDocument(data, {parent: canvas.scene}),
+            p: (doc) => new Wall(doc),
+            cache: (w) => ssfc.addWall(w)
+        }
+    }
+
+    for (const placeable of placeables) {
+        scene[placeable].forEach(p=> {
+            const data = p.toObject();
+
+            switch(placeable) {
+                case "walls":
+                    data.c[0] = Math.round(data.c[0] / tile.data.width * 1000);
+                    data.c[1] = Math.round(data.c[1] / tile.data.height * 1000);
+                    data.c[2] = Math.round(data.c[2] / tile.data.width * 1000);
+                    data.c[3] = Math.round(data.c[3] / tile.data.height * 1000);
+                    break;
+                case "lights":
+                    const dw = Math.round(data.config.dim / tile.data.width * 1000);
+                    const dh = Math.round(data.config.dim / tile.data.height * 1000);
+                    data.config.dim = dw < dh ? dw : dh;
+                    const bw = Math.round(data.config.bright / tile.data.width * 1000);
+                    const bh = Math.round(data.config.bright / tile.data.height * 1000);
+                    data.config.dim = bw < bh ? bw : bh;
+                    break;
+                case "sounds":
+                    const rw = Math.round(data.radius / tile.data.width * 1000);
+                    const rh = Math.round(data.radius / tile.data.height * 1000);
+                    data.radius = rw < rh ? rw : rh;
+                    break;
+            }
+
+            if ( placeable !== "walls") {
+                data.x = Math.round(data.x / tile.data.width * 1000);
+                data.y = Math.round(data.y / tile.data.height * 1000);
+            }
+
+            const doc = pDict[placeable].doc(data);
+            const e = pDict[placeable].p(doc);
+            e.parentSubScene = [tile.id]
+            pDict[placeable].cache(e)
+        })
+    }
+}
 
 async function cacheSubScene(uuid, {parent = false} = {}) {
     const source = await fromUuid(uuid);
@@ -118,6 +200,9 @@ async function cacheSubScene(uuid, {parent = false} = {}) {
     }
     ssfc.setSubSceneCache(tileDoc.id, subSceneFlags);
     ssfc.setSubSceneCache(uuid, subSceneFlags);
+
+    // Cache the placeables for this sub-scene
+    cacheInScenePlaceables(source, tileDoc.object)
 }
 
 function populateScene(uuid) {
@@ -135,6 +220,60 @@ function populateScene(uuid) {
         }
     }
 
+}
+
+async function populatePlaceables() {
+    const placeables = ["drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens", "walls"];
+    const pDict = {
+        drawings: (d) => canvas.drawings.objects.addChild(d),
+        lights : (l) => canvas.lighting.objects.addChild(l),
+        notes : (n) => canvas.notes.objects.addChild(n),
+        sounds: (s) => canvas.sounds.objects.addChild(s),
+        templates: (t) => canvas.templates.objects.addChild(t),
+        tiles: (t) => {
+            if ( t.data.overhead ) return canvas.foreground.objects.addChild(t);
+            return canvas.background.objects.addChild(t);
+        },
+        tokens: (t) => canvas.tokens.objects.addChild(t),
+        walls: (w) => canvas.walls.objects.addChild(w)
+    }
+
+    for (const placeable of placeables) {
+        ssfc[placeable].forEach(async (p) => {
+
+            const tile = ssfc.getSubSceneTile(p.parentSubScene[0]);
+            switch(placeable) {
+                case "walls": 
+                    p.data.c[0] = Math.round(p.data.c[0] / 1000 * tile.data.width) + tile.data.x;
+                    p.data.c[1] = Math.round(p.data.c[1] / 1000 * tile.data.height) + tile.data.y;
+                    p.data.c[2] = Math.round(p.data.c[2] / 1000 * tile.data.width) + tile.data.x;
+                    p.data.c[3] = Math.round(p.data.c[3] / 1000 * tile.data.height) + tile.data.y;
+                    break;
+                case "lights":
+                    const dw = Math.round(p.data.config.dim / 1000 * tile.data.width);
+                    const dh = Math.round(p.data.config.dim / 1000 * tile.data.height);
+                    p.data.config.dim = dw < dh ? dw : dh;
+                    const bw = Math.round(p.data.config.bright / 1000 * tile.data.width);
+                    const bh = Math.round(p.data.config.bright / 1000 * tile.data.height);
+                    p.data.config.dim = bw < bh ? bw : bh;
+                    break;
+                case "sounds":
+                    const rw = Math.round(p.data.radius / 1000 * tile.data.width);
+                    const rh = Math.round(p.data.radius / 1000 * tile.data.height);
+                    p.data.radius = rw < rh ? rw : rh;
+                    break;
+            }
+
+            if ( placeable !== "walls") {
+                p.data.x = Math.round(p.data.x / 1000 * tile.data.width) + tile.data.x;
+                p.data.y = Math.round(p.data.y / 1000 * tile.data.height) + tile.data.y;
+            }
+
+            pDict[placeable](p);
+            await p.draw();
+            p.activateListeners();
+        })
+    }
 }
 
 export async function onReady({uuid = false} = {}) {
@@ -172,6 +311,9 @@ export async function onReady({uuid = false} = {}) {
 
     // Add sub-scene tiles to the canvas and to canvas.background
     populateScene(activeSceneUUID);
+
+    // Add placeables to all sub-scenes in the viewport
+    await populatePlaceables(activeSceneUUID);
 }
 
 /*************************************************************************************/

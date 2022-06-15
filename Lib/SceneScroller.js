@@ -43,6 +43,14 @@ export class SceneScroller_Flags {
         this.viewport = {};
         this.subScenes = new Map();  // Scenes in a compendium, or Scene-Tiler tiles in the viewport
         this.tokens = new Map();
+        this.walls = new Map();
+        this.drawings = new Map();
+        this.lights = new Map();
+        this.notes = new Map();
+        this.sounds = new Map();
+        this.templates = new Map();
+        this.tiles = new Map();
+        this.tokens = new Map();
 
         this._initialize();
     }
@@ -122,6 +130,48 @@ export class SceneScroller_Flags {
         const tokenFlags = SCSC_Flag_Schema.tokenFlags;
         tokenFlags[this.tokenFlags[1]] = data;
         await tokenDoc.setFlag(ModuleName, this.tokenFlags[1], data)
+    }
+
+    /*************************************************************************************/
+    /* Placeables CRUD Methods */
+    /*************************************************************************************/
+
+    addWall(wall) {
+        if ( this.walls.has(wall.id) ) {
+            // Duplicate wall.  Update the wall to add parent ID existing wall.
+            const existingWall = this.walls.get(wall.id);
+            const otherParentID = existingWall.parentSubScene[0];
+            wall.parentSubScene.push(otherParentID);
+            this.walls.set(wall.id, wall);
+        } else this.walls.set(wall.id, wall);
+    }
+
+    addLight(light) {
+        this.lights.set(light.id, light);
+    }
+
+    addNote(note) {
+        this.notes.set(note.id, note);
+    }
+
+    addSound(sound) {
+        this.sounds.set(sound.id, sound);
+    }
+
+    addTemplate(template) {
+        this.templates.set(template.id, template);
+    }
+
+    addTile(tile) {
+        this.tiles.set(tile.id, tile);
+    }
+
+    addToken(token) {
+        this.tokens.set(token.id, token);
+    }
+
+    addDrawing(drawing) {
+        this.drawings.set(drawing.id, drawing);
     }
 
     /*************************************************************************************/

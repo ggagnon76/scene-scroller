@@ -3,22 +3,19 @@ export const ModuleName = "scene-scroller";
 export const ModuleTitle = "SCENE SCROLLER";
 export const SocketModuleName = "module." + ModuleName;
 export let ssfc; // Scene Scroller Flags Cache
-export let preventCanvasDraw = false; // Boolean for scene_onupdate wrapper.
 
 /** Module Initialization */
 
 import * as monkeypatch from "./Lib/Wrap.js"
 import { log, onReady, initialize, isScrollerScene } from "./Lib/functions.js";
-import { SceneScroller_Flags } from "./Lib/SceneScroller.js";
+import { SceneScroller_Flags, SCSC_Flag_Schema } from "./Lib/SceneScroller.js";
 
 Hooks.once('init', () => {
-    monkeypatch.scene_onupdate('WRAPPER');
-    monkeypatch.myTestWallInclusion('WRAPPER');
     monkeypatch.updateToken('WRAPPER');
-    monkeypatch.isDoorVisible('WRAPPER');
 })
 
 Hooks.once('ready', () => {
+    game.modules.get(ModuleName).schema = SCSC_Flag_Schema;
     game.modules.get(ModuleName).initialize = () => {
         ssfc = new SceneScroller_Flags;
         initialize();
