@@ -1,4 +1,4 @@
-import { ModuleName, ssfc } from "../ss-initialize.js";
+import { ModuleName, ssc } from "../ss-initialize.js";
 import { isScrollerScene } from "./functions.js";
 
 /**
@@ -8,8 +8,9 @@ import { isScrollerScene } from "./functions.js";
 export class SCSC_Flag_Schema {
     /* Default keys and flag values */
     static viewportFlags = {
-        SubSceneUUIDs: [],
-        ActiveSceneUUID: "",
+        SubSceneTokenData: [],  // Stored as JSON strings
+        ActiveTokenID: "",
+        ActiveScene: ""
     }
 
     static compendiumSceneFlags = {
@@ -34,14 +35,14 @@ export class SCSC_Flag_Schema {
 /**
  * A class that caches various flag data and handles CRUD operations.
  */
-export class SceneScroller_Flags {
+export class SceneScroller_Cache {
     constructor() {
         this.viewportFlags = Object.keys(SCSC_Flag_Schema.viewportFlags);
         this.subSceneChildrenFlags = Object.keys(SCSC_Flag_Schema.subSceneChildrenFlags);
         this.tokenFlags = Object.keys(SCSC_Flag_Schema.tokenFlags);
         this.compendiumFlags = Object.keys(SCSC_Flag_Schema.compendiumSceneFlags);
         this.viewport = {};
-        this.subScenes = new Map();  // Scenes in a compendium, or Scene-Tiler tiles in the viewport
+        this.subScenes = new Map();
         this.tokens = new Map();
         this.walls = new Map();
         this.drawings = new Map();
@@ -59,34 +60,51 @@ export class SceneScroller_Flags {
     /* viewport CRUD operations */
     /*************************************************************************************/
 
-    get getViewportFlags() {
-        return Object.keys(this.viewport).length ? this.viewport :  SCSC_Flag_Schema.viewportFlags;
+    get activeScene() {
+        if ( this.viewport[this.viewportFlags[2]] !== undefined ) return this.viewport[this.viewportFlags[2]];
+        // Active Scene can be different for players and GM.
+        let activeSceneUUID;
+        if ( game.user.isGM ) {
+            const activeTokenID = canvas.scene.getFlag(ModuleName, this.viewportFlags[1]);
+            // convert tokenID to sub-sceneUUID
+        } else {
+            // Look at all tokens in cache to see which ones the user has observer permissions
+
+            // Get the active sub-scene from the first controllable token (random)
+        }
+        // NOT FINISHED!
     }
 
-    get ActiveScene() {
-        return this.viewport[this.viewportFlags[1]]
+    cacheActiveScene(uuid) {
+        this.viewport[this.viewportFlags[2]] = uuid;
     }
 
-    async setActiveScene(tileUUID) {
-        this.viewport[this.viewportFlags[1]] = tileUUID;
-        await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], tileUUID);
+    async setActiveToken(tokenID) {
+        this.viewport[this.viewportFlags[1]] = tokenID;
+        await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], tokenID);
     }
 
-    async addSubSceneInViewport(tileUUID) {
+    async addTokenInViewport(tokenData) {
         const currSet = new Set(this.viewport[this.viewportFlags[0]]);
-        currSet.add(tileUUID);  // Using a set makes it easy to avoid duplicates.
+        currSet.add(JSON.stringify(tokenData));
         this.viewport[this.viewportFlags[0]] = [...currSet];
+        await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], [...currSet]);
     }
 
-    async deleteSubSceneInViewport(tileUUID) {
+    async deleteTokenInViewport(tokenData) {  // Needs review.  Will TokenData change when changes are made to token?
         const currSet = new Set(this.viewport[this.viewportFlags[0]]);
-        currSet.delete(tileUUID);
+        currSet.delete(JSON.stringify(tokenData));
         this.viewport[this.viewportFlags[0]] = [...currSet];
+        await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], [...currSet]);
     }
 
     /*************************************************************************************/
     /* subScenes CRUD operations */
     /*************************************************************************************/
+
+    get allSubScenes() {
+        return [...new Set(this.subScenes.values())];
+    }
 
     getSubSceneFlags(scnID) {
         return this.subScenes.get(scnID) ?? SCSC_Flag_Schema.subSceneChildrenFlags;
@@ -101,35 +119,26 @@ export class SceneScroller_Flags {
     }
 
     get ActiveBounds() {
-        return this.subScenes.get(this.ActiveScene)[ssfc.subSceneChildrenFlags[3]];
+        return this.subScenes.get(this.activeScene)[ssc.subSceneChildrenFlags[3]];
     }
 
     get ActiveChildren() {
-        return this.subScenes.get(this.ActiveScene)[ssfc.subSceneChildrenFlags[0]];
+        return this.subScenes.get(this.activeScene)[ssc.subSceneChildrenFlags[0]];
     }
     
     /*************************************************************************************/
     /* tokens CRUD operations */
     /*************************************************************************************/
 
-    getTokenFlags(tknID) {
-        return this.tokens.get(tknID) ?? SCSC_Flag_Schema.tokenFlags;
-    }
-
-    async setActiveSubSceneInToken(tokenDoc, tileUUID) {
-        const tokenFlags = SCSC_Flag_Schema.tokenFlags;
-        tokenFlags[this.tokenFlags[0]] = tileUUID;
-        await tokenDoc.setFlag(ModuleName, this.tokenFlags[0], tileUUID);
-    }
-
-    getActiveSubSceneFromToken(tokID) {
-        return this.tokens.get(tokID)[this.tokenFlags[0]];
-    }
-
-    async setInTileLocInToken(tokenDoc, data) {
-        const tokenFlags = SCSC_Flag_Schema.tokenFlags;
-        tokenFlags[this.tokenFlags[1]] = data;
-        await tokenDoc.setFlag(ModuleName, this.tokenFlags[1], data)
+    async addToken(token) {
+        this.tokens.set(token.id, token);
+        const data = token.document.toObject();
+        const currArr = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]) || [];
+        currArr.push(JSON.stringify(data));
+        await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], currArr);
+        if ( game.user.isGM ) {
+            await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], token.parentSubScene);
+        }
     }
 
     /*************************************************************************************/
@@ -166,10 +175,6 @@ export class SceneScroller_Flags {
         this.tiles.set(tile.id, tile);
     }
 
-    addToken(token) {
-        this.tokens.set(token.id, token);
-    }
-
     addDrawing(drawing) {
         this.drawings.set(drawing.id, drawing);
     }
@@ -183,16 +188,17 @@ export class SceneScroller_Flags {
             this.viewport[k] = canvas.scene.getFlag(ModuleName, k)
         }
 
-        for (const tok of canvas.tokens.placeables) {
-            if ( !tok.document.data.flags?.hasOwnProperty(ModuleName) ) {
-                for (const [k,v] of SCSC_Flag_Schema.tokenFlags) {
-                    await tok.document.setFlag(ModuleName, k, v);
-                }
-            }
-            this.tokens.set(tok.id, {
-                [this.tokenFlags[0]]: tok.document.getFlag(ModuleName, this.tokenFlags[0]), 
-                [this.tokenFlags[1]]: tok.document.getFlag(ModuleName, this.tokenFlags[1])
-            })
+        // Create full tokens from stored tokenData.
+        if ( !isScrollerScene() ) return;
+        const tokArray = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]);
+        for (const tok of tokArray) {
+            const data = JSON.parse(tok);
+            const doc = new tokenDocument(data, {parent: canvas.scene});
+            const token = new Token(doc);
+
+            // Need to assign more attributes, like parentSubScene, etc...
+
+            this.tokens.set(token.id, token);
         }
     }
 }
