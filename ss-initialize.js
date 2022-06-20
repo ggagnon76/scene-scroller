@@ -11,7 +11,7 @@ import { log, onReady, initialize, isScrollerScene, tokenCreate } from "./Lib/fu
 import { SceneScroller_Cache, SCSC_Flag_Schema } from "./Lib/SceneScroller.js";
 
 Hooks.once('init', () => {
-    monkeypatch.updateToken('WRAPPER');
+    // Wrappers here.
 })
 
 Hooks.once('ready', () => {
@@ -19,9 +19,6 @@ Hooks.once('ready', () => {
     game.modules.get(ModuleName).initialize = () => {
         ssc = new SceneScroller_Cache;
         initialize();
-    }
-    if ( isScrollerScene() ) {
-        ssc = new SceneScroller_Cache;
     }
 })
 
@@ -32,7 +29,16 @@ Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
 });
 
 /** Module In-Use */
-Hooks.on('ready', onReady);
+Hooks.on('updateScene', () => {
+    ssc = undefined;
+})
+
+Hooks.on('canvasReady', () => {
+    if ( isScrollerScene() ) {
+        ssc = new SceneScroller_Cache;
+        onReady();
+    }
+});
 
 /** Token creation */
 Hooks.on('preCreateToken', tokenCreate)

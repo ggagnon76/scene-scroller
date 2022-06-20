@@ -79,6 +79,20 @@ export async function localResizeScene(area) {
     canvas.lighting.illumination.background.clear().beginFill(0xFFFFFF, 1.0).drawShape(bgRect).endFill();
 }
 
+async function placeableDraw(placeable) {
+    await placeable.draw();
+
+    // Replace the listener for drag drop so Foundry doesn't try to save change to database.  Update placeable coords instead.
+    let placeableDragDrop;
+    if ( placeable instanceof Token) {
+        placeableDragDrop = _tokenDragDrop.bind(placeable);
+    } else {
+        placeableDragDrop = _placeableDragDrop.bind(placeable);
+    }
+
+    placeable.mouseInteractionManager.callbacks.dragLeftDrop = placeableDragDrop;
+}
+
 /*************************************************************************************/
 /* onReady() and supporting functions */
 /*************************************************************************************/
@@ -222,6 +236,12 @@ function _handleDragDrop(event) {
 }
 
 function _placeableDragDrop(event) {
+
+    if ( this._dragHandle ) {
+        const handleDragDrop = _handleDragDrop.bind(this);
+        return handleDragDrop(event);
+    }
+
     const {clones, destination, originalEvent} = event.data;
     if ( !clones || !canvas.grid.hitArea.contains(destination.x, destination.y) ) return false;
     const updates = clones.map(c => {
@@ -241,21 +261,6 @@ function _placeableDragDrop(event) {
         placeable.data = data;
         placeableDraw(placeable);
     }
-}
-
-function _prePlaceableDragDrop(event) {
-    const handleDragDrop = _handleDragDrop.bind(this);
-    if ( this._dragHandle ) return handleDragDrop(event);
-    const placeableDragDrop = _placeableDragDrop.bind(this);
-    return placeableDragDrop(event);
-}
-
-async function placeableDraw(placeable) {
-    await placeable.draw();
-
-    // Replace the listener for drag drop so Foundry doesn't try to save change to database.  Update placeable coords instead.
-    const prePlaceableDragDrop = _prePlaceableDragDrop.bind(placeable);
-    placeable.mouseInteractionManager.callbacks.dragLeftDrop = prePlaceableDragDrop;
 }
 
 async function drawDoorControl(p) {
@@ -337,7 +342,12 @@ async function populatePlaceables() {
     for (const placeable of placeables) {
         ssc[placeable].forEach(async (p) => {
 
-            const tile = ssc.getSubSceneTile(p.parentSubScene[0]);
+            let tile;
+            if ( placeable === "tokens" ) {
+                const tokenParentUUID = p.document.getFlag(ModuleName, ssc.tokenFlags[0]);
+                tile = ssc.getSubSceneTile(tokenParentUUID);
+            } else tile = ssc.getSubSceneTile(p.parentSubScene[0])
+
             switch(placeable) {
                 case "walls": 
                     p.data.c[0] = p.data.c[0] / 1000 * tile.data.width + tile.data.x;
@@ -358,9 +368,14 @@ async function populatePlaceables() {
                     const rh = Math.round(p.data.radius / 1000 * tile.data.height);
                     p.data.radius = rw < rh ? rw : rh;
                     break;
+                case "tokens" : 
+                    const tokenLoc = p.document.getFlag(ModuleName, ssc.tokenFlags[1]);
+                    p.data.x = p.data._source.x = tokenLoc.x + tile.data.x;
+                    p.data.y = p.data._source.y = tokenLoc.y + tile.data.y;
+                    break;
             }
 
-            if ( placeable !== "walls") {
+             if ( placeable !== "walls" && placeable !== "tokens") {
                 p.data.x = p.data._source.x = Math.round(p.data.x / 1000 * tile.data.width) + tile.data.x;
                 p.data.y = p.data._source.y = Math.round(p.data.y / 1000 * tile.data.height) + tile.data.y;
             }
@@ -402,7 +417,7 @@ export async function onReady(uuid = null) {
     populateScene(ssc.activeScene);
 
     // Add placeables to all sub-scenes in the viewport
-    await populatePlaceables(ssc.activeScene);
+    await populatePlaceables();
 }
 
 /*************************************************************************************/
@@ -456,14 +471,6 @@ function _tokenDragDrop() {
     ui.notifications.info("Token drag-drop functionality not yet implemented.");
 }
 
-async function tokenDraw(token) {
-    await token.draw();
-
-    // Replace the listener for drag drop so Foundry doesn't try to save change to database.  Update placeable coords instead.
-    const tokenDragDrop = _tokenDragDrop.bind(token);
-    token.mouseInteractionManager.callbacks.dragLeftDrop = tokenDragDrop;
-}
-
 const debounceTokenCreation = foundry.utils.debounce( async (token) => {
     // Cache the token
     ssc.addToken(token);
@@ -471,7 +478,7 @@ const debounceTokenCreation = foundry.utils.debounce( async (token) => {
     canvas.tokens.objects.addChild(token);
 
     // Draw token and update eventListeners
-    tokenDraw(token);
+    placeableDraw(token);
 
     token.visible = true;
 }, 50);
@@ -533,12 +540,10 @@ export function tokenCreate(doc, data, options, userId) {
 
     // Update the token flags with the required data.
     doc.data.update({
-        "flags.scene-scroller.CurrentTile" : finalSubScene.parentSubScene,
-        "flags.scene-scroller.inTileLoc" : {x: data.x - finalSubScene.data.x, y: data.y - finalSubScene.data.y}
+        [`flags.${ModuleName}.${ssc.tokenFlags[0]}`] : finalSubScene.parentSubScene,
+        [`flags.${ModuleName}.${ssc.tokenFlags[1]}`] : {x: data.x - finalSubScene.data.x, y: data.y - finalSubScene.data.y}
     });
-    // update data to place the token at (0,0)
-    data.x = 0;
-    data.y = 0;
+
     // Assign an ID to the token document
     doc.data._id = foundry.utils.randomID(16);
 

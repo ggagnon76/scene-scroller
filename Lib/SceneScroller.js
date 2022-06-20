@@ -133,11 +133,12 @@ export class SceneScroller_Cache {
     async addToken(token) {
         this.tokens.set(token.id, token);
         const data = token.document.toObject();
+        data._id = token.data._id;
         const currArr = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]) || [];
         currArr.push(JSON.stringify(data));
         await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], currArr);
         if ( game.user.isGM ) {
-            await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], token.parentSubScene);
+            await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], token.id);
         }
     }
 
@@ -193,12 +194,15 @@ export class SceneScroller_Cache {
         const tokArray = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]);
         for (const tok of tokArray) {
             const data = JSON.parse(tok);
-            const doc = new tokenDocument(data, {parent: canvas.scene});
+            const doc = new TokenDocument(data, {parent: canvas.scene});
             const token = new Token(doc);
-
-            // Need to assign more attributes, like parentSubScene, etc...
-
             this.tokens.set(token.id, token);
         }
+
+        // Cache the active token's active sub-scene
+        const activeTokenID = canvas.scene.getFlag(ModuleName, this.viewportFlags[1]);
+        const activeToken = this.tokens.get(activeTokenID);
+        const activeTokenScene = activeToken.document.getFlag(ModuleName, this.tokenFlags[0]);
+        this.cacheActiveScene(activeTokenScene);
     }
 }
