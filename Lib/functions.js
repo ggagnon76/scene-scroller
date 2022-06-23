@@ -26,6 +26,11 @@ import { message_handler } from "./Socket.js";
     }
 }
 
+/**
+ * A convenience function to determine if the scene has been initialized as a Scene Scroller viewport.
+ * @param {object} scene *Optional* A Foundry Scene.  Defaults to the current active scene.
+ * @returns {boolean}   
+ */
 export function isScrollerScene(scene = canvas.scene) {
     if (scene?.data?.flags?.hasOwnProperty(ModuleName) || ssc !== undefined) return true;
     return false;
@@ -45,6 +50,10 @@ export function isScrollerScene(scene = canvas.scene) {
     return `Compendium.${clctn}.${scn_id}`;
 }
 
+/**
+ * Changes the size of the scene locally.  Does not affect db or trigger canvas.draw().
+ * @param {object} area {width: <number>, height: <number>}
+ */
 export async function localResizeScene(area) {
     log(false, "Executing 'localResizeScene() function.");
 
@@ -79,6 +88,10 @@ export async function localResizeScene(area) {
     canvas.lighting.illumination.background.clear().beginFill(0xFFFFFF, 1.0).drawShape(bgRect).endFill();
 }
 
+/**
+ * Redraws the placeable and replaces some eventListeners with custom functions.
+ * @param {object} placeable A Foundry instance for any given placeable.
+ */
 async function placeableDraw(placeable) {
     await placeable.draw();
 
@@ -93,6 +106,10 @@ async function placeableDraw(placeable) {
     placeable.mouseInteractionManager.callbacks.dragLeftDrop = placeableDragDrop;
 }
 
+/**
+ * Pans the canvas to center the view at the center of the current scene.
+ * Only used when setting a new sub-scene which doesn't have tokens
+ */
 export function sceneCenterScaleToFit() {
     const pad = 75;
     const sidebarPad = $("#sidebar").width() + pad;
@@ -115,9 +132,15 @@ export function sceneCenterScaleToFit() {
     canvas.updateBlur(finalScale)
 }
 
+/**
+ * Determines if a location is within the bounds of any sub-scenes in the cache.
+ * @param {object} loc {x: <number>, y: <number>}
+ * @returns 
+ */
 function locInSubScenes(loc) {
     const subSceneArray = [];
-    for (const scene of ssc.allSubScenes) {
+    // TO-DO:  Below may have to be refined to only check for sub-scenes currently displayed!!
+    for (const scene of ssc.allSubScenes) {  
         // Normalize token location to sub-scene coordinates
         const x = loc.x - scene.Tile.data.x;
         const y = loc.y - scene.Tile.data.y;
@@ -132,6 +155,13 @@ function locInSubScenes(loc) {
     return subSceneArray;
 }
 
+/**
+ * Determines if a location is valid (not in transparent areas) in all sub-scenes supplied in an array
+ * If there are more than one valid sub-scenes, the function returns the first one.
+ * @param {object} loc {x: <number>, y: <number>}
+ * @param {object} scenes An array of sub-scene objects (tiles)
+ * @returns {object}    A Foundry Tile instance
+ */
 function locInSubSceneValidAlpha(loc, scenes) {
     const subSceneArrayByPX = [];
     // Skip the following algorithm if there's just one sub-scene in the array
@@ -157,6 +187,12 @@ function locInSubSceneValidAlpha(loc, scenes) {
 /* onReady() and supporting functions */
 /*************************************************************************************/
 
+/**
+ * Queries a scene in a compendium to copy all placeables into the cache.
+ * All copied placeables reference the parent Tile/Scene
+ * @param {object} scene An compendium scene
+ * @param {object} tile A Foundry Tile instance
+ */
 function cacheInScenePlaceables(scene, tile) {
     const placeables = ["drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens", "walls"];
     const pDict = {
@@ -241,6 +277,10 @@ function cacheInScenePlaceables(scene, tile) {
     }
 }
 
+/**
+ * Given a compendium scene UUID, creates a Foundry Tile, caches it and extracts all the placeables.
+ * @param {string} uuid The UUID to a compendium scene
+ */
 async function cacheSubScene(uuid) {
     const source = await fromUuid(uuid);
 
@@ -274,6 +314,10 @@ async function cacheSubScene(uuid) {
     cacheInScenePlaceables(source, tileDoc.object)
 }
 
+/**
+ * Given a compendium scene UUID, populates the viewport with the parent and children sub-scenes.
+ * @param {string} uuid A compendium scene UUID
+ */
 function populateScene(uuid) {
     const d = canvas.dimensions;
     const tile = ssc.getSubSceneTile(uuid);
@@ -291,10 +335,18 @@ function populateScene(uuid) {
 
 }
 
+/**
+ * A replacement function for a placeables resize event.
+ * @param {object} event HTML event
+ */
 function _handleDragDrop(event) {
     ui.notifications.info("Resizing not implemented yet.");
 }
 
+/**
+ * A replacement function for a placeables drag-drop event.
+ * @param {object} event HTML event
+ */
 function _placeableDragDrop(event) {
 
     if ( this._dragHandle ) {
@@ -323,6 +375,10 @@ function _placeableDragDrop(event) {
     }
 }
 
+/**
+ * Redraws the door control icon and replaces some eventListeners with custom functions.
+ * @param {object} p A Foundry Wall instance
+ */
 async function drawDoorControl(p) {
     await p.doorControl.draw();
     const doorControlLeftClick = _doorControlLeftClick.bind(p);
@@ -333,6 +389,10 @@ async function drawDoorControl(p) {
      .on("rightdown", doorControlRightClick);
 }
 
+/**
+ * A replacement function for a left-click event on a door icon
+ * @param {object} event HTML event
+ */
 function _doorControlLeftClick(event) {
     /** Copied from DoorControls#_onMouseDown() */
     if ( event.data.originalEvent.button !== 0 ) return; // Only support standard left-click
@@ -370,6 +430,11 @@ function _doorControlLeftClick(event) {
     });
 }
 
+/**
+ * A replacement function for a right-click event on a door icon.
+ * @param {object} event HTML event
+ * @returns 
+ */
 function _doorControlRightClick(event) {
     /** Copied from DoorControls#_onRightDown() */
     event.stopPropagation();
@@ -383,6 +448,9 @@ function _doorControlRightClick(event) {
     drawDoorControl(this);
 }
 
+/**
+ * Adds all placeables that need to be added to the viewport.
+ */
 async function populatePlaceables() {
     const placeables = ["drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens", "walls"];
     const pDict = {
@@ -452,6 +520,10 @@ async function populatePlaceables() {
     }
 }
 
+/**
+ * Called by a 'canvasReady' hook to rebuild the scene from flag data, or from a supplied UUID.
+ * @param {string} uuid *Optional* A compendium scene UUID
+ */
 export async function onReady(uuid = null) {
 
     if ( !isScrollerScene() && uuid === null ) return;
@@ -492,6 +564,10 @@ export async function onReady(uuid = null) {
 /* initialize() and supporting functions */
 /*************************************************************************************/
 
+/**
+ * A function that is called by a UI (or macro) by a GM to initialize a foundry scene as
+ * a scene scroller viewport.
+ */
 export async function initialize() {
     if ( !game.user.isGM ) return;
 
@@ -535,13 +611,22 @@ export async function initialize() {
 /* token creation and supporting functions */
 /*************************************************************************************/
 
+/**
+ * A debounced function to update token data (location, occpied sub-scene). 
+ * Debounced 3 seconds because the user could be making multiple movements in succession.
+ * @param {object} tokenArr An array of Foundry Token instances
+ */
 const debounceTokenUpdate = foundry.utils.debounce( (tokenArr) => {
     for (const {token, loc, uuid} of tokenArr) {
         ssc.updateTokenFlags(token, loc, uuid);
     }
-})
+}, 3000);
 
-function tokenDragDrop(event) {
+/**
+ * A replacement function for a token drag-drop event (token movement by mouse)
+ * @param {object} event HTML event
+ */
+async function tokenDragDrop(event) {
     /** Copied from Token#_onDragLeftDrop()  */
     const clones = event.data.clones || [];
     const {originalEvent, destination} = event.data;
@@ -603,6 +688,15 @@ function tokenDragDrop(event) {
             continue;
         }
 
+        if ( destinationSubScene !== ssc.activeScene ) {
+            const addChildSubScenes = await ssc.neededSubScenes(destinationSubScene.compendiumSubSceneUUID);
+            for (const child of addChildSubScenes) {
+                cacheSubScene(child);
+            }
+
+            // TO DO:  Populate grandchildren relative to child position.
+        }
+
         const tok = ssc.getToken(update._id)
         tok.setPosition(update.x, update.y);
         tok.data.x = tok.data._source.x = update.x;
@@ -624,7 +718,12 @@ function tokenDragDrop(event) {
     debounceTokenUpdate(updatedTokenArr);
 }
 
-const debounceTokenCreation = foundry.utils.debounce( async (token) => {
+/**
+ * A debounced function to cache a created token, and add it to the canvas (local only)
+ * Debounced because 'preCreateToken' hook is not async, and this function is.  (STILL TRUE??)
+ * @param {object} token    A Foundry Token instance
+ */
+const debounceTokenCreation = foundry.utils.debounce( (token) => {
     // Cache the token
     ssc.cacheToken(token);
     // Add the token to the scene
@@ -636,6 +735,15 @@ const debounceTokenCreation = foundry.utils.debounce( async (token) => {
     token.visible = true;
 }, 50);
 
+/**
+ * Called by a 'preCreateToken' hook.  Stops the standard Foundry token creation algorithm
+ * and implements this custom algorithm.
+ * @param {object} doc Foundry Token document.  Supplied by 'preCreateToken' hook.
+ * @param {object} data Foundry Token creation data.  Supplied by 'preCreateToken' hook.
+ * @param {object} options Foundry Token creation options.  Supplied by 'preCreateToken' hook.
+ * @param {string} userId Foundry game user ID.  Supplied by 'preCreateToken' hook.
+ * @returns {boolean}   Returning false stops the standard Foundry creation algorithm for a token.
+ */
 export function tokenCreate(doc, data, options, userId) {
     // Don't alter normal token creation for non-scene-scroller scenes.
     if ( !isScrollerScene() ) return true;
