@@ -84,18 +84,8 @@ export class SceneScroller_Cache {
         await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], tokenID);
     }
 
-    async addTokenInViewport(tokenData) {
-        const currSet = new Set(this.viewport[this.viewportFlags[0]]);
-        currSet.add(JSON.stringify(tokenData));
-        this.viewport[this.viewportFlags[0]] = [...currSet];
-        await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], [...currSet]);
-    }
-
-    async deleteTokenInViewport(tokenData) {  // Needs review.  Will TokenData change when changes are made to token?
-        const currSet = new Set(this.viewport[this.viewportFlags[0]]);
-        currSet.delete(JSON.stringify(tokenData));
-        this.viewport[this.viewportFlags[0]] = [...currSet];
-        await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], [...currSet]);
+    get activeTokenID() {
+        return this.viewport[this.viewportFlags[1]];
     }
 
     /*************************************************************************************/
@@ -130,16 +120,60 @@ export class SceneScroller_Cache {
     /* tokens CRUD operations */
     /*************************************************************************************/
 
-    async addToken(token) {
+    async cacheToken(token) {
         this.tokens.set(token.id, token);
-        const data = token.document.toObject();
-        data._id = token.data._id;
-        const currArr = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]) || [];
-        currArr.push(JSON.stringify(data));
-        await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], currArr);
         if ( game.user.isGM ) {
+            const data = token.document.toObject();
+            data._id = token.data._id;
+            const currArr = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]) || [];
+            currArr.push(JSON.stringify(data));
+            await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], currArr);
             await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], token.id);
         }
+    }
+
+    getToken(id) {
+        return this.tokens.get(id);
+    }
+
+    get getAllTokens() {
+        return [...new Set(this.tokens.values())];
+    }
+
+    async deleteToken(token) {
+        this.tokens.delete(token.id);
+        if ( game.user.isGM ) {
+            const currArr = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]) || [];
+            const newArr = currArr.filter(t => !t.includes(JSON.stringify(token.id)));
+            await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], newArr);
+            // If this happened to also be the active token, then pick the first from newArr to make it the active token
+            const currTokID = canvas.scene.getFlag(ModuleName, this.viewportFlags[1]);
+            if ( currTokID === token.id ) {
+                const newCurr = newArr[0]?.id || "";
+                await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], newCurr);
+            }
+        }
+    }
+
+    async updateTokenFlags(token, loc, uuid = null) {
+
+        // Tokens are local memory only.  Not in db.  Can't use setFlag
+        token.document.data.update({
+            [`flags.${ModuleName}.${ssc.tokenFlags[1]}`] : {x: loc.x, y: loc.y}
+        });
+
+        if ( uuid !== null ) {
+            token.document.data.update({
+                [`flags.${ModuleName}.${ssc.tokenFlags[0]}`] : uuid
+            });
+        }
+
+        await this.deleteToken(token);
+        await this.cacheToken(token);
+    }
+
+    tokenCurrentSubScene(token) {
+        return token.document.getFlag(ModuleName, this.tokenFlags[0]);
     }
 
     /*************************************************************************************/

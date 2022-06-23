@@ -85,13 +85,73 @@ async function placeableDraw(placeable) {
     // Replace the listener for drag drop so Foundry doesn't try to save change to database.  Update placeable coords instead.
     let placeableDragDrop;
     if ( placeable instanceof Token) {
-        placeableDragDrop = _tokenDragDrop.bind(placeable);
+        placeableDragDrop = (event) => tokenDragDrop(event);
     } else {
         placeableDragDrop = _placeableDragDrop.bind(placeable);
     }
 
     placeable.mouseInteractionManager.callbacks.dragLeftDrop = placeableDragDrop;
 }
+
+export function sceneCenterScaleToFit() {
+    const pad = 75;
+    const sidebarPad = $("#sidebar").width() + pad;
+    const d = canvas.dimensions;
+
+    const center = {
+        x: d.width / 2,
+        y: d.height / 2
+    }
+
+    const scale = {
+        x: (window.innerWidth - sidebarPad - pad) / d.width,
+        y: (window.innerHeight - 2 * pad) / d.height
+    }
+
+    const finalScale = scale.x < scale.y ? scale.x : scale.y;
+
+    canvas.stage.pivot.set(center.x, center.y);
+    canvas.stage.scale.set(finalScale, finalScale);
+    canvas.updateBlur(finalScale)
+}
+
+function locInSubScenes(loc) {
+    const subSceneArray = [];
+    for (const scene of ssc.allSubScenes) {
+        // Normalize token location to sub-scene coordinates
+        const x = loc.x - scene.Tile.data.x;
+        const y = loc.y - scene.Tile.data.y;
+
+        // Test against the bounding box of the sub-scene
+        if ( (x < scene.Tile._alphaMap.minX) || (x > scene.Tile._alphaMap.maxX) ) continue;
+        if ( (y < scene.Tile._alphaMap.minY) || (y > scene.Tile._alphaMap.maxY) ) continue;
+
+        subSceneArray.push(scene);
+    }
+
+    return subSceneArray;
+}
+
+function locInSubSceneValidAlpha(loc, scenes) {
+    const subSceneArrayByPX = [];
+    // Skip the following algorithm if there's just one sub-scene in the array
+    if ( scenes.length > 1 ) {
+        // Test a specific pixel for each sub-scene
+        for (const sScene of scenes) {
+            const px = (Math.round(loc.y) * Math.round(Math.abs(sScene.data.width))) + Math.round(loc.x);
+            const isInSubScene = sScene._alphaMap.pixels[px] === 1;
+            if ( isInSubScene ) subSceneArrayByPX.push(sScene);
+        }    
+    }
+
+    // Check for edge case where token is dropped on a tile, but in an area of zero alpha
+    if ( !subSceneArrayByPX.length && scenes.length > 1 ) {
+        return "Error: In Zero-Alpha";
+    }
+
+    // If there are still more than one possible sub-scenes, then just take the first one.  (So random)
+    return subSceneArrayByPX[0]?.Tile || scenes[0].Tile;
+} 
 
 /*************************************************************************************/
 /* onReady() and supporting functions */
@@ -133,7 +193,7 @@ function cacheInScenePlaceables(scene, tile) {
         tokens: {
             doc: (data) => new TokenDocument(data, {parent: canvas.scene}),
             p: (doc) => new Token(doc),
-            cache: (t) => ssc.addToken(t)
+            cache: (t) => ssc.cacheToken(t)
         },
         walls: {
             doc: (data) => new WallDocument(data, {parent: canvas.scene}),
@@ -198,7 +258,7 @@ async function cacheSubScene(uuid) {
     tileDoc.data.x = tileDoc.data._source.x = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).x;
     tileDoc.data.y = tileDoc.data._source.y = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).y;
     tileDoc.object._createAlphaMap({keepPixels: true});
-    tileDoc.object.parentSubScene = uuid;
+    tileDoc.object.compendiumSubSceneUUID = uuid;
 
     // Save this tile in the cache referencing both tile.id and the scene uuid, for convenience
     const subSceneFlags = {
@@ -418,6 +478,14 @@ export async function onReady(uuid = null) {
 
     // Add placeables to all sub-scenes in the viewport
     await populatePlaceables();
+
+    if ( ssc.getAllTokens.length ) {
+        // Pan to active token
+        const activeTokenID = ssc.activeTokenID;
+        const tok = ssc.getToken(activeTokenID);
+        canvas.animatePan({x: tok.center.x, y: tok.center.y, duration: 0})
+    } else sceneCenterScaleToFit();
+
 }
 
 /*************************************************************************************/
@@ -467,13 +535,98 @@ export async function initialize() {
 /* token creation and supporting functions */
 /*************************************************************************************/
 
-function _tokenDragDrop() {
-    ui.notifications.info("Token drag-drop functionality not yet implemented.");
+const debounceTokenUpdate = foundry.utils.debounce( (tokenArr) => {
+    for (const {token, loc, uuid} of tokenArr) {
+        ssc.updateTokenFlags(token, loc, uuid);
+    }
+})
+
+function tokenDragDrop(event) {
+    /** Copied from Token#_onDragLeftDrop()  */
+    const clones = event.data.clones || [];
+    const {originalEvent, destination} = event.data;
+
+    // Ensure the cursor destination is within bounds
+    if ( !canvas.dimensions.rect.contains(destination.x, destination.y) ) return false;
+
+    // Compute the final dropped positions
+    const updates = clones.reduce((updates, c) => {
+
+      // Get the snapped top-left coordinate
+      let dest = {x: c.data.x, y: c.data.y};
+      if ( !originalEvent.shiftKey && (canvas.grid.type !== CONST.GRID_TYPES.GRIDLESS) ) {
+        const isTiny = (c.data.width < 1) && (c.data.height < 1);
+        dest = canvas.grid.getSnappedPosition(dest.x, dest.y, isTiny ? 2 : 1);
+      }
+
+      // Test collision for each moved token vs the central point of it's destination space
+      const target = c.getCenter(dest.x, dest.y);
+      if ( !game.user.isGM ) {
+        c._velocity = c._original._velocity;
+        let collides = c.checkCollision(target);
+        if ( collides ) {
+          ui.notifications.error("ERROR.TokenCollide", {localize: true});
+          return updates
+        }
+      }
+
+      // Otherwise ensure the final token center is in-bounds
+      else if ( !canvas.dimensions.rect.contains(target.x, target.y) ) return updates;
+
+      // Perform updates where no collision occurs
+      updates.push({_id: c._original.id, x: dest.x, y: dest.y});
+      return updates;
+    }, []);
+
+    /** The following deviates from Token#_onDragLeftDrop() */
+
+    const updatedTokenArr = [];
+    for (const update of updates) {
+
+        // Determine if the token landed in a new sub-scene, then add update details to updatedTokenArr
+        const inScenes = locInSubScenes({x: update.x, y: update.y})
+
+        // If somehow the token is dragged in empty space, outside of any sub-scene...
+        if ( !inScenes.length ) {
+            log(false, "Aborting token movement.  Not dropped in area defined by a sub-scene (tile).");
+            ui.notifications.warn("Token drop location is not contained in any sub-scene.  Token movement aborted.");
+            continue;
+        }
+
+        // Check alpha maps to determine which sub-scene(s) the token occupies
+        const destinationSubScene = locInSubSceneValidAlpha({x: update.x, y: update.y}, inScenes)
+
+        // Check for edge case where token is dropped on a tile, but in an area of zero alpha
+        if ( destinationSubScene === "Error: In Zero-Alpha" ) {
+            log(false, "Aborting token creation.  Token dropped in area of sub-scene (tile) with zero alpha.");
+            ui.notifications.warn("Token drop location is not in a valid part of any sub-scene.  Token movement aborted.");
+            continue;
+        }
+
+        const tok = ssc.getToken(update._id)
+        tok.setPosition(update.x, update.y);
+        tok.data.x = tok.data._source.x = update.x;
+        tok.data.y = tok.data._source.y = update.y;
+
+        const locInScene = {
+            x: update.x - destinationSubScene.data.x,
+            y: update.y - destinationSubScene.data.y
+        }
+
+        updatedTokenArr.push({
+            token: tok,
+            loc: locInScene,
+            uuid: destinationSubScene.compendiumSubSceneUUID
+        })
+    }
+
+    // Debounce the update of token flags with new loc (and new sub-scene if necessary) for updatedTokenArr
+    debounceTokenUpdate(updatedTokenArr);
 }
 
 const debounceTokenCreation = foundry.utils.debounce( async (token) => {
     // Cache the token
-    ssc.addToken(token);
+    ssc.cacheToken(token);
     // Add the token to the scene
     canvas.tokens.objects.addChild(token);
 
@@ -495,62 +648,37 @@ export function tokenCreate(doc, data, options, userId) {
         y: data.y + th
     }
 
-    // Check to see if the token drop location is contained in a sub-scene.
-    const subSceneArray = [];
-    for (const scene of ssc.allSubScenes) {
-        // Normalize token location to sub-scene coordinates
-        const x = tc.x - scene.Tile.data.x;
-        const y = tc.y - scene.Tile.data.y;
-
-        // Test against the bouding box of the sub-scene
-        if ( (x < scene.Tile._alphaMap.minX) || (x > scene.Tile._alphaMap.maxX) ) continue;
-        if ( (y < scene.Tile._alphaMap.minY) || (y > scene.Tile._alphaMap.maxY) ) continue;
-
-        subSceneArray.push(scene);
-    }
-
+    // Check to see if the token drop location is contained within the bounds of one or more sub-scenes.
+    const subSceneArr = locInSubScenes(tc);
+    
     // If the token was dropped in the viewport but not in any sub-scene, don't create the token...
-    if ( !subSceneArray.length ) {
+    if ( !subSceneArr.length ) {
         log(false, "Aborting token creation.  Not dropped in area defined by a sub-scene (tile).");
         ui.notifications.warn("Token drop location is not contained in any sub-scene.  Token creation aborted.");
         return false;
     }
 
-    // Check alpha maps to determine which sub-scene the token occupies
-    const subSceneArrayByPX = [];
-    // Skip the following algorithm if there's just one sub-scene in the array
-    if ( subSceneArray.length > 1 ) {
-        // Test a specific pixel for each sub-scene
-        for (const sScene of subSceneArray) {
-            const px = (Math.round(y) * Math.round(Math.abs(sScene.data.width))) + Math.round(x);
-            const isInSubScene = sScene._alphaMap.pixels[px] === 1;
-            if ( isInSubScene ) subSceneArrayByPX.push(subScene);
-        }    
-    }
+    // Check alpha maps to determine which sub-scene(s) the token occupies
+    const finalSubScene = locInSubSceneValidAlpha(tc, subSceneArr)
 
     // Check for edge case where token is dropped on a tile, but in an area of zero alpha
-    if ( !subSceneArrayByPX.length && subSceneArray.length > 1 ) {
+    if ( finalSubScene === "Error: In Zero-Alpha" ) {
         log(false, "Aborting token creation.  Token dropped in area of sub-scene (tile) with zero alpha.");
         ui.notifications.warn("Token drop location is not in a valid part of any sub-scene.  Token creation aborted.");
         return false;
     }
 
-    // If there are still more than one possible sub-scenes, then just take the first one.  (So random)
-    const finalSubScene = subSceneArrayByPX[0]?.Tile || subSceneArray[0].Tile;
-
     // Update the token flags with the required data.
     doc.data.update({
-        [`flags.${ModuleName}.${ssc.tokenFlags[0]}`] : finalSubScene.parentSubScene,
+        [`flags.${ModuleName}.${ssc.tokenFlags[0]}`] : finalSubScene.compendiumSubSceneUUID,
         [`flags.${ModuleName}.${ssc.tokenFlags[1]}`] : {x: data.x - finalSubScene.data.x, y: data.y - finalSubScene.data.y}
     });
 
     // Assign an ID to the token document
     doc.data._id = foundry.utils.randomID(16);
-
-    const t = new Token(doc);
     
     // Debounce to save the token in the cache and put our own local token on the scene.
-    debounceTokenCreation(t);
+    debounceTokenCreation(new Token(doc));
 
     // Don't allow creation of token in db.
     return false;
