@@ -222,8 +222,8 @@ function cacheInScenePlaceables(scene, tile) {
             cache: (n) => ssc.addNote(n)
         },
         sounds: {
-            doc : (data) => new SoundDocument(data, {parent: canvas.scene}),
-            p: (doc) => new Sound(doc),
+            doc : (data) => new AmbientSoundDocument(data, {parent: canvas.scene}),
+            p: (doc) => new AmbientSound(doc),
             cache: (s) => ssc.addSound(s)
         },
         templates: {
@@ -291,7 +291,7 @@ function cacheInScenePlaceables(scene, tile) {
  * Given a compendium scene UUID, creates a Foundry Tile, caches it and extracts all the placeables.
  * @param {string} uuid The UUID to a compendium scene
  */
-async function cacheSubScene(uuid) {
+async function cacheSubScene(uuid, {parent = false} = {}) {
     const source = await fromUuid(uuid);
 
     // Create a local memory tile for this source.  (not saved to database)
@@ -305,8 +305,15 @@ async function cacheSubScene(uuid) {
         _id: foundry.utils.randomID(16)
     }
     const tileDoc = new TileDocument(data, {parent: canvas.scene});
-    tileDoc.data.x = tileDoc.data._source.x = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).x;
-    tileDoc.data.y = tileDoc.data._source.y = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).y;
+    if ( parent ) {
+        tileDoc.data.x = tileDoc.data._source.x = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).x;
+        tileDoc.data.y = tileDoc.data._source.y = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).y;
+    } else {
+        const childrenFlags = ssc.ActiveChildren;
+        const childFlags = childrenFlags.filter(c => c.ChildrenSceneUUIDs.includes(uuid)).pop();
+        tileDoc.data.x = tileDoc.data._source.x = childFlags.ChildCoords.x;
+        tileDoc.data.y = tileDoc.data._source.y = childFlags.ChildCoords.y;
+    }
     tileDoc.object.compendiumSubSceneUUID = uuid;
 
     // Save this tile in the cache referencing both tile.id and the scene uuid, for convenience
@@ -512,7 +519,7 @@ async function populatePlaceables() {
                     break;
             }
 
-             if ( placeable !== "walls" && placeable !== "tokens") {
+             if ( placeable !== "walls" && placeable !== "tokens" ) {
                 p.data.x = p.data._source.x = Math.round(p.data.x / 1000 * tile.data.width) + tile.data.x;
                 p.data.y = p.data._source.y = Math.round(p.data.y / 1000 * tile.data.height) + tile.data.y;
             }
