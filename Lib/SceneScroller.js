@@ -342,8 +342,8 @@ export class SceneScroller_Cache {
             children = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[0]);
         }
         for (const child of children) {
-            if ( this.subScenes.has(child) ) continue;
-            missingSubScenes.push(child);
+            if ( this.subScenes.has(child.ChildrenSceneUUIDs) ) continue;
+            missingSubScenes.push(child.ChildrenSceneUUIDs);
         }
         return missingSubScenes
     }

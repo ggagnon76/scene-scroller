@@ -29,7 +29,8 @@ Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
 });
 
 /** Module In-Use */
-Hooks.on('updateScene', () => {
+Hooks.on('updateScene', (scene, data, options, id) => {
+    if ( data.hasOwnProperty("flags") ) return;
     ssc = undefined;
 })
 

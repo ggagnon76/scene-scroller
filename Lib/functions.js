@@ -140,7 +140,10 @@ export function sceneCenterScaleToFit() {
 function locInSubScenes(loc) {
     const subSceneArray = [];
     // TO-DO:  Below may have to be refined to only check for sub-scenes currently displayed!!
-    for (const scene of ssc.allSubScenes) {  
+    for (const scene of ssc.allSubScenes) {
+
+        if ( !scene.Tile._alphaMap ) scene.Tile._createAlphaMap({keepPixels: true});
+
         // Normalize token location to sub-scene coordinates
         const x = loc.x - scene.Tile.data.x;
         const y = loc.y - scene.Tile.data.y;
@@ -167,8 +170,15 @@ function locInSubSceneValidAlpha(loc, scenes) {
     // Skip the following algorithm if there's just one sub-scene in the array
     if ( scenes.length > 1 ) {
         // Test a specific pixel for each sub-scene
-        for (const sScene of scenes) {
-            const px = (Math.round(loc.y) * Math.round(Math.abs(sScene.data.width))) + Math.round(loc.x);
+        for (const subSceneFlags of scenes) {
+            const sScene = subSceneFlags.Tile;
+            // Normalize coordinates to tile top left corner
+            const coord = {
+                x: loc.x - sScene.data.x,
+                y: loc.y - sScene.data.y
+            };
+        
+            const px = (Math.round(coord.y) * Math.round(Math.abs(sScene.data.width))) + Math.round(coord.x);
             const isInSubScene = sScene._alphaMap.pixels[px] === 1;
             if ( isInSubScene ) subSceneArrayByPX.push(sScene);
         }    
@@ -297,7 +307,6 @@ async function cacheSubScene(uuid) {
     const tileDoc = new TileDocument(data, {parent: canvas.scene});
     tileDoc.data.x = tileDoc.data._source.x = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).x;
     tileDoc.data.y = tileDoc.data._source.y = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).y;
-    tileDoc.object._createAlphaMap({keepPixels: true});
     tileDoc.object.compendiumSubSceneUUID = uuid;
 
     // Save this tile in the cache referencing both tile.id and the scene uuid, for convenience
@@ -613,14 +622,14 @@ export async function initialize() {
 
 /**
  * A debounced function to update token data (location, occpied sub-scene). 
- * Debounced 3 seconds because the user could be making multiple movements in succession.
+ * Debounced 1 second because the user could be making multiple movements in succession.
  * @param {object} tokenArr An array of Foundry Token instances
  */
 const debounceTokenUpdate = foundry.utils.debounce( (tokenArr) => {
     for (const {token, loc, uuid} of tokenArr) {
         ssc.updateTokenFlags(token, loc, uuid);
     }
-}, 3000);
+}, 1000);
 
 /**
  * A replacement function for a token drag-drop event (token movement by mouse)
@@ -688,13 +697,13 @@ async function tokenDragDrop(event) {
             continue;
         }
 
-        if ( destinationSubScene !== ssc.activeScene ) {
+        if ( destinationSubScene.compendiumSubSceneUUID !== ssc.activeScene ) {
             const addChildSubScenes = await ssc.neededSubScenes(destinationSubScene.compendiumSubSceneUUID);
             for (const child of addChildSubScenes) {
                 cacheSubScene(child);
             }
 
-            // TO DO:  Populate grandchildren relative to child position.
+            // TO DO:  Refresh the scene with the new active sub-scene.
         }
 
         const tok = ssc.getToken(update._id)
@@ -736,13 +745,13 @@ const debounceTokenCreation = foundry.utils.debounce( (token) => {
 }, 50);
 
 /**
- * Called by a 'preCreateToken' hook.  Stops the standard Foundry token creation algorithm
- * and implements this custom algorithm.
+ * Called by a 'preCreateToken' hook.  Stops the standard Foundry token creation workflow
+ * and implements this custom workflow.
  * @param {object} doc Foundry Token document.  Supplied by 'preCreateToken' hook.
  * @param {object} data Foundry Token creation data.  Supplied by 'preCreateToken' hook.
  * @param {object} options Foundry Token creation options.  Supplied by 'preCreateToken' hook.
  * @param {string} userId Foundry game user ID.  Supplied by 'preCreateToken' hook.
- * @returns {boolean}   Returning false stops the standard Foundry creation algorithm for a token.
+ * @returns {boolean}   Returning false stops the standard Foundry creation workflow for a token.
  */
 export function tokenCreate(doc, data, options, userId) {
     // Don't alter normal token creation for non-scene-scroller scenes.
