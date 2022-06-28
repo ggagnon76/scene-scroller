@@ -1,6 +1,6 @@
 import { ModuleName, ModuleTitle, SocketModuleName, ssc } from "../ss-initialize.js";
 import { ScrollerInitiateScene } from "./forms.js";
-import { SCSC_Flag_Schema, SceneScroller_Cache } from "./SceneScroller.js";
+import { SCSC_Flag_Schema } from "./SceneScroller.js";
 import { message_handler } from "./Socket.js";
 
 
@@ -133,26 +133,27 @@ export function sceneCenterScaleToFit() {
 }
 
 /**
- * Determines if a location is within the bounds of any sub-scenes in the cache.
+ * Determines if a location is within the bounds of any sub-scenes being displayed in the viewport.
  * @param {object} loc {x: <number>, y: <number>}
  * @returns 
  */
 function locInSubScenes(loc) {
     const subSceneArray = [];
-    // TO-DO:  Below may have to be refined to only check for sub-scenes currently displayed!!
-    for (const scene of ssc.allSubScenes) {
+    const viewportSubScenes = [{ChildrenSceneUUIDs: ssc.activeScene}, ...ssc.ActiveChildren]
+    for (const sceneID of viewportSubScenes) {
+        const sceneTile = ssc.getSubSceneTile(sceneID.ChildrenSceneUUIDs);
 
-        if ( !scene.Tile._alphaMap ) scene.Tile._createAlphaMap({keepPixels: true});
+        if ( !sceneTile._alphaMap ) sceneTile._createAlphaMap({keepPixels: true});
 
         // Normalize token location to sub-scene coordinates
-        const x = loc.x - scene.Tile.data.x;
-        const y = loc.y - scene.Tile.data.y;
+        const x = loc.x - sceneTile.data.x;
+        const y = loc.y - sceneTile.data.y;
 
         // Test against the bounding box of the sub-scene
-        if ( (x < scene.Tile._alphaMap.minX) || (x > scene.Tile._alphaMap.maxX) ) continue;
-        if ( (y < scene.Tile._alphaMap.minY) || (y > scene.Tile._alphaMap.maxY) ) continue;
+        if ( (x < sceneTile._alphaMap.minX) || (x > sceneTile._alphaMap.maxX) ) continue;
+        if ( (y < sceneTile._alphaMap.minY) || (y > sceneTile._alphaMap.maxY) ) continue;
 
-        subSceneArray.push(scene);
+        subSceneArray.push(sceneTile);
     }
 
     return subSceneArray;
@@ -170,8 +171,7 @@ function locInSubSceneValidAlpha(loc, scenes) {
     // Skip the following algorithm if there's just one sub-scene in the array
     if ( scenes.length > 1 ) {
         // Test a specific pixel for each sub-scene
-        for (const subSceneFlags of scenes) {
-            const sScene = subSceneFlags.Tile;
+        for (const sScene of scenes) {
             // Normalize coordinates to tile top left corner
             const coord = {
                 x: loc.x - sScene.data.x,
@@ -190,7 +190,7 @@ function locInSubSceneValidAlpha(loc, scenes) {
     }
 
     // If there are still more than one possible sub-scenes, then just take the first one.  (So random)
-    return subSceneArrayByPX[0]?.Tile || scenes[0].Tile;
+    return subSceneArrayByPX[0] || scenes[0];
 } 
 
 /*************************************************************************************/
@@ -735,6 +735,8 @@ async function tokenDragDrop(event) {
         }
 
         await tok.setPosition(update.x, update.y);
+        tok.data.x = tok.data._source.x = update.x;
+        tok.data.y = tok.data._source.y = update.y;
 
         updatedTokenArr.push({
             token: tok,
