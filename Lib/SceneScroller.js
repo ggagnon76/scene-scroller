@@ -61,21 +61,10 @@ export class SceneScroller_Cache {
     /*************************************************************************************/
 
     /**
-     * A getter to fetch the active sub-scene to display.  Displaed sub-scene can differ by user.
+     * A getter to fetch the active sub-scene to display.  Displayed sub-scene can differ by user.
      */
     get activeScene() {
         if ( this.viewport[this.viewportFlags[2]] !== undefined ) return this.viewport[this.viewportFlags[2]];
-        // Active Scene can be different for players and GM.
-        let activeSceneUUID;
-        if ( game.user.isGM ) {
-            const activeTokenID = canvas.scene.getFlag(ModuleName, this.viewportFlags[1]);
-            // convert tokenID to sub-sceneUUID
-        } else {
-            // Look at all tokens in cache to see which ones the user has observer permissions
-
-            // Get the active sub-scene from the first controllable token (random)
-        }
-        // NOT FINISHED!
     }
 
     /**
@@ -232,6 +221,15 @@ export class SceneScroller_Cache {
      */
     tokenCurrentSubScene(token) {
         return token.document.getFlag(ModuleName, this.tokenFlags[0]);
+    }
+
+    /**
+     * Gets an object defining the coordinates of the token relative to the sub-scene it occupies.
+     * @param {object} token A Foundry Token instance
+     * @returns {object} {x: <number>, y: <number>}  Coordinates relative to sub-scene top left corner.
+     */
+    tokenCurrentLoc(token) {
+        return token.document.getFlag(ModuleName, this.tokenFlags[1]);
     }
 
     /*************************************************************************************/

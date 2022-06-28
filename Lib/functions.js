@@ -682,7 +682,7 @@ async function tokenDragDrop(event) {
     /** The following deviates from Token#_onDragLeftDrop() */
 
     const updatedTokenArr = [];
-    for (const update of updates) {
+    for (let update of updates) {
 
         // Determine if the token landed in a new sub-scene, then add update details to updatedTokenArr
         const inScenes = locInSubScenes({x: update.x, y: update.y})
@@ -704,24 +704,37 @@ async function tokenDragDrop(event) {
             continue;
         }
 
-        if ( destinationSubScene.compendiumSubSceneUUID !== ssc.activeScene ) {
-            const addChildSubScenes = await ssc.neededSubScenes(destinationSubScene.compendiumSubSceneUUID);
-            for (const child of addChildSubScenes) {
-                cacheSubScene(child);
-            }
-
-            // TO DO:  Refresh the scene with the new active sub-scene.
-        }
-
-        const tok = ssc.getToken(update._id)
-        tok.setPosition(update.x, update.y);
-        tok.data.x = tok.data._source.x = update.x;
-        tok.data.y = tok.data._source.y = update.y;
-
-        const locInScene = {
+        let tok = ssc.getToken(update._id)
+        let locInScene = {
             x: update.x - destinationSubScene.data.x,
             y: update.y - destinationSubScene.data.y
         }
+
+        if ( destinationSubScene.compendiumSubSceneUUID !== ssc.tokenCurrentSubScene(tok) ) {
+
+            const preDestScene = ssc.getSubSceneTile(destinationSubScene.compendiumSubSceneUUID);
+
+            locInScene = {
+                x: update.x - preDestScene.data.x,
+                y: update.y - preDestScene.data.y
+            }
+
+            await newSubScene(destinationSubScene.compendiumSubSceneUUID);
+
+            const postDestScene = ssc.getSubSceneTile(destinationSubScene.compendiumSubSceneUUID);
+            update.x = locInScene.x + postDestScene.data.x;
+            update.y = locInScene.y + postDestScene.data.y;
+
+            await tok.setPosition(preDestScene.data.x + locInScene.x, preDestScene.data.y + locInScene.y, {animate: false})
+
+            const sceneVectorPan = {
+                x: postDestScene.x - preDestScene.x,
+                y: postDestScene.y - preDestScene.y
+            }
+            canvas.stage.pivot.set(canvas.stage.pivot.x + sceneVectorPan.x, canvas.stage.pivot.y + sceneVectorPan.y);
+        }
+
+        await tok.setPosition(update.x, update.y);
 
         updatedTokenArr.push({
             token: tok,
@@ -806,4 +819,54 @@ export function tokenCreate(doc, data, options, userId) {
 
     // Don't allow creation of token in db.
     return false;
+}
+
+/*************************************************************************************/
+/* Update viewport and supporting functions */
+/*************************************************************************************/
+function clearAllPlaceables() {
+    const placeables = ["drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens", "walls"];
+    const pDict = {
+        drawings: () => canvas.drawings.objects.removeChildren(),
+        lights : () => canvas.lighting.objects.removeChildren(),
+        notes : () => canvas.notes.objects.removeChildren(),
+        sounds: () => canvas.sounds.objects.removeChildren(),
+        templates: () => canvas.templates.objects.removeChildren(),
+        tiles: () => {
+            canvas.foreground.objects.removeChildren();
+            canvas.background.objects.removeChildren();
+        },
+        tokens: () => canvas.tokens.objects.removeChildren(),
+        walls: () => {
+            canvas.controls.doors.removeChildren();
+            canvas.walls.objects.removeChildren();
+        }
+    }
+
+    for (const placeable of placeables) {
+        pDict[placeable]();
+    }
+}
+
+async function newSubScene(uuid) {
+    ssc.cacheActiveScene(uuid);
+    clearAllPlaceables();
+
+        // Scene is empty.  Build the scene using flag data.  
+    // Cache the active sub-scene
+    await cacheSubScene(ssc.activeScene, {parent: true});
+
+    // Cache the children sub-scenes
+    for (const data of ssc.ActiveChildren) {
+        await cacheSubScene(data[ssc.subSceneChildrenFlags[0]]);
+    }
+
+    // Resize the scene to fit the active scene and it's children sub-scenes.
+    localResizeScene(ssc.ActiveBounds);
+
+    // Add sub-scene tiles to the canvas and to canvas.background
+    populateScene(ssc.activeScene);
+
+    // Add placeables to all sub-scenes in the viewport
+    await populatePlaceables();
 }
