@@ -52,6 +52,8 @@ export class SceneScroller_Cache {
         this.templates = new Map();
         this.tiles = new Map();
         this.tokens = new Map();
+        this.compendiumSources = new Map();
+        this.sprites = new Map();
 
         this._initialize();
     }
@@ -63,14 +65,14 @@ export class SceneScroller_Cache {
     /**
      * A getter to fetch the active sub-scene to display.  Displayed sub-scene can differ by user.
      */
-    get activeScene() {
+    get activeSceneUUID() {
         if ( this.viewport[this.viewportFlags[2]] !== undefined ) return this.viewport[this.viewportFlags[2]];
     }
 
     /**
      * @param {string} uuid The UUID of the sub-scene to be cached.
      */
-    cacheActiveScene(uuid) {
+    cacheactiveSceneUUID(uuid) {
         this.viewport[this.viewportFlags[2]] = uuid;
     }
 
@@ -105,7 +107,7 @@ export class SceneScroller_Cache {
      * @returns {object}    A foundry Tile instance.
      */
     getSubSceneTile(id) {
-        return this.subScenes.get(id).Tile;
+        return this.subScenes.get(id);
     }
 
     /**
@@ -117,19 +119,52 @@ export class SceneScroller_Cache {
         this.subScenes.set(id, tile);
     }
 
+    /** 
+     * Check if the cache contains a tile instance
+     * @param {string}  id  The tile.ID or the UUID
+     * @returns {boolean}   True if it does, false otherwise
+     */
+    hasSubSceneInCache(id) {
+        return this.subScenes.has(id);
+    }
+
     /**
      * A getter to fetch a bounds object (data) of the current active sub-scene stored in the cache
      */
     get ActiveBounds() {
-        return this.subScenes.get(this.activeScene)[ssc.subSceneChildrenFlags[3]];
+        return this.subScenes.get(this.activeSceneUUID)[this.subSceneChildrenFlags[3]];
     }
 
     /**
      * A getter to fetch an array of sub-scene UUID's for all the child sub-scenes of the
      * current active sub-scene stored in the cache
      */
-    get ActiveChildren() {
-        return this.subScenes.get(this.activeScene)[ssc.subSceneChildrenFlags[0]];
+    get ActiveChildrenUUIDs() {
+        const activeSubSceneUuid = this.subScenes.get(this.activeSceneUUID).compendiumSubSceneUUID;
+        const activeSubSceneSource = this.compendiumSources.get(activeSubSceneUuid);
+        const subSceneFlagsArr =  activeSubSceneSource.getFlag("scene-scroller-maker", this.compendiumFlags[0]);
+        return subSceneFlagsArr.map(s => {
+            return s[this.subSceneChildrenFlags[0]];
+        })
+    }
+
+    /**
+     * A function that returns an array of children uuids for a given parent uuid (the parent sub-scene).
+     * @param {string} uuid The UUID of the sub-scene from which we want the children uuids.
+     * @returns {array<string>}
+     */
+    childrenUuids(uuid) {
+        const activeSubSceneSource = this.compendiumSources.get(uuid);
+        const subSceneFlagsArr =  activeSubSceneSource.getFlag("scene-scroller-maker", this.compendiumFlags[0]);
+        return subSceneFlagsArr.map(s => {
+            return s[this.subSceneChildrenFlags[0]];
+        })
+    }
+
+    get ActiveChildrenFlags() {
+        const activeSubSceneUuid = this.subScenes.get(this.activeSceneUUID).compendiumSubSceneUUID;
+        const activeSubSceneSource = this.compendiumSources.get(activeSubSceneUuid);
+        return activeSubSceneSource.getFlag("scene-scroller-maker", this.compendiumFlags[0]) 
     }
     
     /*************************************************************************************/
@@ -299,6 +334,30 @@ export class SceneScroller_Cache {
     }
 
     /*************************************************************************************/
+    /* Compendium Source CRUD Methods */
+    /*************************************************************************************/
+
+    cacheCompendiumSource(id, source) {
+        this.compendiumSources.set(id, source);
+    }
+
+    compendiumSourceFromCache(uuid) {
+        return this.compendiumSources.get(uuid);
+    }
+
+    /*************************************************************************************/
+    /* sprites CRUD Methods */
+    /*************************************************************************************/
+
+    cacheSubSceneSprite(id, sprite) {
+        this.sprites.set(id, sprite);
+    }
+
+    spriteFromCache(uuid) {
+        return this.sprites.get(uuid);
+    }
+
+    /*************************************************************************************/
     /* NON-CRUD Methods */
     /*************************************************************************************/
 
@@ -324,25 +383,6 @@ export class SceneScroller_Cache {
         const activeTokenID = canvas.scene.getFlag(ModuleName, this.viewportFlags[1]);
         const activeToken = this.tokens.get(activeTokenID);
         const activeTokenScene = activeToken.document.getFlag(ModuleName, this.tokenFlags[0]);
-        this.cacheActiveScene(activeTokenScene);
-    }
-
-    /**
-     * Determines what sub-scenes need to be added to the cache if another sub-scene is made the active scene.
-     * @param {string} uuid A Foundry compendium scene UUID, intended to become the active scene
-     * @returns {Promise}    Promise object that resolves to an array of UUID strings.
-     */
-    async neededSubScenes(uuid) {
-        const missingSubScenes = [];
-        let children = this.subScenes.get(uuid)[ssc.subSceneChildrenFlags[0]];
-        if ( children === undefined ) {
-            const source = await fromUuid(uuid);
-            children = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[0]);
-        }
-        for (const child of children) {
-            if ( this.subScenes.has(child.ChildrenSceneUUIDs) ) continue;
-            missingSubScenes.push(child.ChildrenSceneUUIDs);
-        }
-        return missingSubScenes
+        this.cacheactiveSceneUUID(activeTokenScene);
     }
 }

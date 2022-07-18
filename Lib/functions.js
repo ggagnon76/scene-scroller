@@ -77,8 +77,8 @@ export async function localResizeScene(area) {
         canvas[u].hitArea = canvas.dimensions.rect;
     }
     canvas.walls._createBoundaries();
-    canvas.sight.draw();
-    canvas.grid.draw();
+    await canvas.sight.draw();
+    await canvas.grid.draw();
     canvas.background.drawOutline(canvas.outline);
     canvas.msk.clear().beginFill(0xFFFFFF, 1.0).drawShape(canvas.dimensions.rect).endFill();
     canvas.primary.mask = canvas.msk;
@@ -139,9 +139,9 @@ export function sceneCenterScaleToFit() {
  */
 function locInSubScenes(loc) {
     const subSceneArray = [];
-    const viewportSubScenes = [{ChildrenSceneUUIDs: ssc.activeScene}, ...ssc.ActiveChildren]
-    for (const sceneID of viewportSubScenes) {
-        const sceneTile = ssc.getSubSceneTile(sceneID.ChildrenSceneUUIDs);
+    const viewportSubScenesUUIDs = [ssc.activeSceneUUID, ...ssc.ActiveChildrenUUIDs]
+    for (const sceneUUID of viewportSubScenesUUIDs) {
+        const sceneTile = ssc.getSubSceneTile(sceneUUID);
 
         if ( !sceneTile._alphaMap ) sceneTile._createAlphaMap({keepPixels: true});
 
@@ -287,68 +287,114 @@ function cacheInScenePlaceables(scene, tile) {
     }
 }
 
-/**
- * Given a compendium scene UUID, creates a Foundry Tile, caches it and extracts all the placeables.
- * @param {string} uuid The UUID to a compendium scene
+function initializeTile(tile, sprite) {
+    tile.texture = sprite.texture;
+    tile.tile = tile.addChild(sprite);
+    tile.tile.anchor.set(0.5,0.5);
+
+    tile.tile.scale.x = tile.data.width / tile.texture.width;
+    tile.tile.scale.y = tile.data.height / tile.texture.height;
+    tile.tile.position.set(Math.abs(tile.data.width)/2, Math.abs(tile.data.height)/2);
+    tile.tile.rotation = Math.toRadians(tile.data.rotation);
+}
+
+/** Given an array of compendium scene UUID's, create Froundry Tiles for each, cache them and recreate the placeables.
+ * @param {string|array.<string>}   uuids   The array of uuid strings
  */
-async function cacheSubScene(uuid, {parent = false} = {}) {
-    const source = await fromUuid(uuid);
+async function cacheSubScene(uuids, {isGrandChild = false}={}) {
+    if ( !Array.isArray(uuids) ) uuids = [uuids];
 
-    // Create a local memory tile for this source.  (not saved to database)
-    const data = {
-        x: 0,
-        y: 0,
-        width: source.dimensions.width,
-        height: source.dimensions.height,
-        overhead: false,
-        img: source.data.img,
-        _id: foundry.utils.randomID(16)
-    }
-    const tileDoc = new TileDocument(data, {parent: canvas.scene});
-    if ( parent ) {
-        tileDoc.data.x = tileDoc.data._source.x = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).x;
-        tileDoc.data.y = tileDoc.data._source.y = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).y;
-    } else {
-        const childrenFlags = ssc.ActiveChildren;
-        const childFlags = childrenFlags.filter(c => c.ChildrenSceneUUIDs.includes(uuid)).pop();
-        tileDoc.data.x = tileDoc.data._source.x = childFlags.ChildCoords.x;
-        tileDoc.data.y = tileDoc.data._source.y = childFlags.ChildCoords.y;
-    }
-    tileDoc.object.compendiumSubSceneUUID = uuid;
+    for (const uuid of uuids) {
 
-    // Save this tile in the cache referencing both tile.id and the scene uuid, for convenience
-    const subSceneFlags = {
-        [ssc.subSceneChildrenFlags[0]] : source.getFlag("scene-scroller-maker", ssc.compendiumFlags[0]),
-        [ssc.subSceneChildrenFlags[1]] : source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]),
-        [ssc.subSceneChildrenFlags[2]] : tileDoc.object,
-        [ssc.subSceneChildrenFlags[3]] : source.getFlag("scene-scroller-maker", ssc.compendiumFlags[1]),
-    }
-    ssc.setSubSceneCache(tileDoc.id, subSceneFlags);
-    ssc.setSubSceneCache(uuid, subSceneFlags);
+        if ( !ssc.compendiumSourceFromCache(uuid) ) {
+            // Save the tile compendium source in the cache referencing the uuid
+            ssc.cacheCompendiumSource(uuid, await fromUuid(uuid));
+        }
+        const source = ssc.compendiumSourceFromCache(uuid);
 
-    // Cache the placeables for this sub-scene
-    cacheInScenePlaceables(source, tileDoc.object)
+        if ( !ssc.spriteFromCache(uuid) ) {
+            // Have Foundry load the texture
+            await TextureLoader.loader.load([source.img])
+            ssc.cacheSubSceneSprite(uuid, new PIXI.Sprite(await loadTexture(source.img)));
+        }
+        const tileSprite = ssc.spriteFromCache(uuid);
+
+        if ( !ssc.getSubSceneTile(uuid) ) {
+            // Create a local memory tile for this source.  (not saved to database)
+            const data = {
+                x: 0,
+                y: 0,
+                width: source.dimensions.width,
+                height: source.dimensions.height,
+                overhead: false,
+                img: source.data.img,
+                _id: foundry.utils.randomID(16)
+            }
+            const tileDoc = new TileDocument(data, {parent: canvas.scene});
+
+            // Save this tile in the cache referencing both tile.id and the scene uuid, for convenience
+            ssc.setSubSceneCache(tileDoc.id, tileDoc.object);
+            ssc.setSubSceneCache(uuid, tileDoc.object);
+        }
+        const tile = ssc.getSubSceneTile(uuid);
+        tile.compendiumSubSceneUUID = uuid;
+
+        // Cache the placeables for this sub-scene
+        cacheInScenePlaceables(source, tile);
+
+        if ( isGrandChild ) continue;
+
+        // The position in scene, assuming this tile is the parent.  Needs to be updated if tile is a child.
+        tile.data.x = tile.data._source.x = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).x;
+        tile.data.y = tile.data._source.y = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).y;
+
+        initializeTile(tile, tileSprite);
+    }
 }
 
 /**
  * Given a compendium scene UUID, populates the viewport with the parent and children sub-scenes.
  * @param {string} uuid A compendium scene UUID
  */
-function populateScene(uuid) {
-    const d = canvas.dimensions;
-    const tile = ssc.getSubSceneTile(uuid);
-    tile.data.x = tile.data._source.x += d.paddingX;
-    tile.data.y = tile.data._source.y += d.paddingY;
-    tile.draw();
-    canvas.background.objects.addChild(tile);
+async function populateScene(uuid, {isParent = false,}={}) {
 
-    // populate child sub-scenes
-    if ( uuid === ssc.activeScene ) {
-        for (const child of ssc.ActiveChildren) {
-            populateScene(child[ssc.subSceneChildrenFlags[0]]);
-        }
+    const tile = ssc.getSubSceneTile(uuid);
+    const activeSceneSource = ssc.compendiumSourceFromCache(uuid);
+
+    if ( isParent ) {
+        // Cache this as the new activeScene
+        ssc.cacheactiveSceneUUID(uuid);
+        // Resize the scene to fit the active scene bounds data.
+        const activeSceneBounds = activeSceneSource.getFlag("scene-scroller-maker", ssc.compendiumFlags[1]);
+        await localResizeScene(activeSceneBounds);
     }
 
+    // The cached tile is unaware of the current scene size or padding
+    // If we're updating the scene, the current location may be incorrect too.
+    const d = canvas.dimensions;
+    if ( isParent ) {
+        const activeSceneLoc = activeSceneSource.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]);
+        tile.data.x = tile.data._source.x = activeSceneLoc.x + d.paddingX;
+        tile.data.y = tile.data._source.y = activeSceneLoc.y + d.paddingY;
+    } else {
+        const childrenFlags = ssc.ActiveChildrenFlags;
+        const childFlags = childrenFlags.filter(c => c[ssc.subSceneChildrenFlags[0]].includes(uuid)).pop();
+        tile.data.x = tile.data._source.x = childFlags.ChildCoords.x + d.paddingX;
+        tile.data.y = tile.data._source.y = childFlags.ChildCoords.y + d.paddingY;
+    }
+
+    if ( tile.texture === undefined ) {
+        const sprite = ssc.spriteFromCache(uuid)
+        initializeTile(tile, sprite);
+    }
+    tile.position.set(tile.data.x, tile.data.y);
+
+    // populate child sub-scenes
+    if ( isParent ) { 
+        for (const childUUID of ssc.ActiveChildrenUUIDs) {
+            await populateScene(childUUID);
+        }
+    }
 }
 
 /**
@@ -466,8 +512,9 @@ function _doorControlRightClick(event) {
 
 /**
  * Adds all placeables that need to be added to the viewport.
+ * @param {array<string>}   uuids   An array of UUID strings.  Only placeables belonging to those UUID's get populated.
  */
-async function populatePlaceables() {
+function populatePlaceables(uuids) {
     const placeables = ["drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens", "walls"];
     const pDict = {
         drawings: (d) => canvas.drawings.objects.addChild(d),
@@ -491,6 +538,8 @@ async function populatePlaceables() {
                 const tokenParentUUID = p.document.getFlag(ModuleName, ssc.tokenFlags[0]);
                 tile = ssc.getSubSceneTile(tokenParentUUID);
             } else tile = ssc.getSubSceneTile(p.parentSubScene[0])
+
+            if ( !uuids.includes(tile.compendiumSubSceneUUID) ) return;
 
             switch(placeable) {
                 case "walls": 
@@ -527,14 +576,27 @@ async function populatePlaceables() {
             pDict[placeable](p);
             placeableDraw(p);
 
-            if ( placeable === "walls") {
-                if ( p.data.door === 1 ) {
+            if ( placeable === "walls" && p.data.door === 1 ) {
                     drawDoorControl(p);
-                }
             }
         })
     }
 }
+
+const debounceGrandChildCache = foundry.utils.debounce( async (uuidArr) => {
+    const missingGrandChildren = new Set();
+    for (const childUuid of uuidArr) {
+        const childSource = await fromUuid(childUuid);
+        const childFlags = childSource.getFlag("scene-scroller-maker", ssc.compendiumFlags[0]);
+        const grandChildrenUUIDs = childFlags.map(s => {
+            return s[ssc.subSceneChildrenFlags[0]];
+        });
+        grandChildrenUUIDs.forEach(u => {
+            if ( !ssc.getSubSceneTile(u) ) missingGrandChildren.add(u);
+        })
+    }
+    cacheSubScene([...missingGrandChildren], {isGrandChild : true});
+}, 1000);
 
 /**
  * Called by a 'canvasReady' hook to rebuild the scene from flag data, or from a supplied UUID.
@@ -546,26 +608,25 @@ export async function onReady(uuid = null) {
     log(false, "Executing 'onReady()' function.");
 
     if ( uuid !== null ) {
-        ssc.cacheActiveScene(uuid);
+        ssc.cacheactiveSceneUUID(uuid);
     }
 
-    // Scene is empty.  Build the scene using flag data.  
-    // Cache the active sub-scene
-    await cacheSubScene(ssc.activeScene, {parent: true});
+    const activeSceneUuid = uuid === null ? ssc.activeSceneUUID : uuid;
 
-    // Cache the children sub-scenes
-    for (const data of ssc.ActiveChildren) {
-        await cacheSubScene(data[ssc.subSceneChildrenFlags[0]]);
-    }
-
-    // Resize the scene to fit the active scene and it's children sub-scenes.
-    localResizeScene(ssc.ActiveBounds);
+    // Scene is empty.  Cache the active sub-scene and child sub-scenes.
+    const source = await fromUuid(activeSceneUuid);
+    const childrenFlags = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[0]);
+    const childrenUUIDs = childrenFlags.map(s => {
+        return s[ssc.subSceneChildrenFlags[0]];
+    });
+    const uuidsArr = [activeSceneUuid, ...childrenUUIDs];
+    await cacheSubScene(uuidsArr);
 
     // Add sub-scene tiles to the canvas and to canvas.background
-    populateScene(ssc.activeScene);
+    await populateScene(ssc.activeSceneUUID, {isParent : true});
 
     // Add placeables to all sub-scenes in the viewport
-    await populatePlaceables();
+    populatePlaceables(uuidsArr);
 
     if ( ssc.getAllTokens.length ) {
         // Pan to active token
@@ -574,6 +635,8 @@ export async function onReady(uuid = null) {
         canvas.animatePan({x: tok.center.x, y: tok.center.y, duration: 0})
     } else sceneCenterScaleToFit();
 
+    // Cache the textures for all the grandchildren
+    debounceGrandChildCache(ssc.ActiveChildrenUUIDs);
 }
 
 /*************************************************************************************/
@@ -638,12 +701,11 @@ const debounceTokenUpdate = foundry.utils.debounce( (tokenArr) => {
     }
 }, 1000);
 
-/**
- * A replacement function for a token drag-drop event (token movement by mouse)
+/** A function containing core workflow for a token move by mouse
  * @param {object} event HTML event
+ * @returns {object}    array of updates
  */
-async function tokenDragDrop(event) {
-    /** Copied from Token#_onDragLeftDrop()  */
+function core_onDragLeftDrop(event) {
     const clones = event.data.clones || [];
     const {originalEvent, destination} = event.data;
 
@@ -679,9 +741,14 @@ async function tokenDragDrop(event) {
       return updates;
     }, []);
 
-    /** The following deviates from Token#_onDragLeftDrop() */
+    return updates;
+}
 
-    const updatedTokenArr = [];
+/**
+ * Define the destination sub-scene for every token being updated.  Mutates updates array.
+ * @param {object}  updates Array of update objects generated by core_onDragLeftDrop()
+ */
+function determineDestination(updates) {
     for (let update of updates) {
 
         // Determine if the token landed in a new sub-scene, then add update details to updatedTokenArr
@@ -689,8 +756,7 @@ async function tokenDragDrop(event) {
 
         // If somehow the token is dragged in empty space, outside of any sub-scene...
         if ( !inScenes.length ) {
-            log(false, "Aborting token movement.  Not dropped in area defined by a sub-scene (tile).");
-            ui.notifications.warn("Token drop location is not contained in any sub-scene.  Token movement aborted.");
+            update.destinationSubScene = null;
             continue;
         }
 
@@ -699,54 +765,110 @@ async function tokenDragDrop(event) {
 
         // Check for edge case where token is dropped on a tile, but in an area of zero alpha
         if ( destinationSubScene === "Error: In Zero-Alpha" ) {
-            log(false, "Aborting token creation.  Token dropped in area of sub-scene (tile) with zero alpha.");
-            ui.notifications.warn("Token drop location is not in a valid part of any sub-scene.  Token movement aborted.");
+            update.destinationSubScene = null;
             continue;
         }
 
-        let tok = ssc.getToken(update._id)
-        let locInScene = {
-            x: update.x - destinationSubScene.data.x,
-            y: update.y - destinationSubScene.data.y
+        update.destinationSubScene = destinationSubScene;
+    }
+}
+
+/** 
+ * Determine if the viewport activeSubScene needs to be updated.
+ * Do not update if at least one controllable token remains on the current active sub-scene.
+ * @param {object}  updates The array of objects containing token update data.
+ * @returns {boolean}   returns True if an update is required.
+ */
+function parentSceneNeedsUpdate(updates) {
+    const currSubSceneUuid = ssc.activeSceneUUID;
+    for (const update of updates) {
+        if ( update.destinationSubScene.compendiumSubSceneUUID === currSubSceneUuid ) return false
+    }
+    return true;
+}
+
+/**
+ * A replacement function for a token drag-drop event (token movement by mouse)
+ * @param {object} event HTML event
+ */
+async function tokenDragDrop(event) {
+    
+    const updates = core_onDragLeftDrop(event);
+    determineDestination(updates);
+    const isUpdated = parentSceneNeedsUpdate(updates);
+
+    const updatedTokenArr = [];
+
+    if ( !isUpdated ) {
+        // Move tokens
+        for (const update of updates) {
+            const tok = ssc.getToken(update._id);
+            await tok.setPosition(update.x, update.y);
+            tok.data.x = tok.data._source.x = update.x;
+            tok.data.y = tok.data._source.y = update.y;
+            const currSubScene = ssc.getSubSceneTile(ssc.activeSceneUUID);
+            updatedTokenArr.push({
+                token: tok,
+                loc: {x: update.x - currSubScene.data.x, y: update.y - currSubScene.data.y},
+                uuid: currSubScene.compendiumSubSceneUUID
+            })
         }
-
-        if ( destinationSubScene.compendiumSubSceneUUID !== ssc.tokenCurrentSubScene(tok) ) {
-
-            const preDestScene = ssc.getSubSceneTile(destinationSubScene.compendiumSubSceneUUID);
-
-            locInScene = {
-                x: update.x - preDestScene.data.x,
-                y: update.y - preDestScene.data.y
-            }
-
-            await newSubScene(destinationSubScene.compendiumSubSceneUUID);
-
-            const postDestScene = ssc.getSubSceneTile(destinationSubScene.compendiumSubSceneUUID);
-            update.x = locInScene.x + postDestScene.data.x;
-            update.y = locInScene.y + postDestScene.data.y;
-
-            await tok.setPosition(preDestScene.data.x + locInScene.x, preDestScene.data.y + locInScene.y, {animate: false})
-
-            const sceneVectorPan = {
-                x: postDestScene.x - preDestScene.x,
-                y: postDestScene.y - preDestScene.y
-            }
-            canvas.stage.pivot.set(canvas.stage.pivot.x + sceneVectorPan.x, canvas.stage.pivot.y + sceneVectorPan.y);
-        }
-
-        await tok.setPosition(update.x, update.y);
-        tok.data.x = tok.data._source.x = update.x;
-        tok.data.y = tok.data._source.y = update.y;
-
-        updatedTokenArr.push({
-            token: tok,
-            loc: locInScene,
-            uuid: destinationSubScene.compendiumSubSceneUUID
-        })
+        // Debounce the update of token flags with new loc (and new sub-scene if necessary) for updatedTokenArr
+        debounceTokenUpdate(updatedTokenArr);
+        return;
     }
 
+    /****************************** */
+    /* The active scene changes.    */
+    /****************************** */
+
+    // What are the sub-scenes that need to be removed?
+    const scenesToRemove = subScenesToRemove(updates[0].destinationSubScene.compendiumSubSceneUUID);
+    const scenesToAdd = subScenesToAdd(updates[0].destinationSubScene.compendiumSubSceneUUID)
+    removeSubScenes(scenesToRemove);
+
+    // Save the viewport location of the soon to be active sub-scene.  To be used to generate a vector
+    const tile = ssc.getSubSceneTile(updates[0].destinationSubScene.compendiumSubSceneUUID);
+    const oldLoc = {
+        x: tile.data.x,
+        y: tile.data.y
+    }
+
+    // Redraw the whole scene with the new sub-scene as the active scene
+    await populateScene(updates[0].destinationSubScene.compendiumSubSceneUUID, {isParent : true});
+
+    const vector = {
+        x: tile.data.x - oldLoc.x,
+        y: tile.data.y - oldLoc.y
+    }
+
+    // Pan the scene by the vector to maintain viewport orientation relative to the new activeScene
+    canvas.stage.pivot.set(canvas.stage.pivot.x + vector.x, canvas.stage.pivot.y + vector.y);
+
+    // Update the location of all the remaining placeables in the scene by the vector!
+    updatePlaceablesLoc(vector);
+
+    // Add missing placeables
+    populatePlaceables(scenesToAdd);
+
+    // Move tokens
+    for (const update of updates) {
+        const tok = ssc.getToken(update._id);
+        await tok.setPosition(update.x + vector.x, update.y + vector.y);
+        tok.data.x = tok.data._source.x = update.x + vector.x;
+        tok.data.y = tok.data._source.y = update.y + vector.y;
+        const currSubScene = ssc.getSubSceneTile(ssc.activeSceneUUID);
+        updatedTokenArr.push({
+            token: tok,
+            loc: {x: update.x + vector.x - currSubScene.data.x, y: update.y + vector.y - currSubScene.data.y},
+            uuid: currSubScene.compendiumSubSceneUUID
+        })
+    }
     // Debounce the update of token flags with new loc (and new sub-scene if necessary) for updatedTokenArr
     debounceTokenUpdate(updatedTokenArr);
+
+    // Cache the textures for all the grandchildren
+    debounceGrandChildCache(ssc.ActiveChildrenUUIDs);
 }
 
 /**
@@ -824,51 +946,103 @@ export function tokenCreate(doc, data, options, userId) {
 }
 
 /*************************************************************************************/
-/* Update viewport and supporting functions */
+/* Update viewport functions */
 /*************************************************************************************/
-function clearAllPlaceables() {
-    const placeables = ["drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens", "walls"];
+
+function subScenesToRemove(newUuid) {
+    // Array of UUID's for all the sub-scenes currently displayed in the viewport
+    const currUuidArr = [ssc.activeSceneUUID, ...ssc.ActiveChildrenUUIDs];
+
+    // Array of UUID's for all the sub-scenes for the newUuid
+    const newUuidArr = [newUuid, ...ssc.childrenUuids(newUuid)];
+
+    return currUuidArr.filter(u => !newUuidArr.includes(u) );
+}
+
+function subScenesToAdd(newUuid) {
+    // Array of UUID's for all the sub-scenes currently displayed in the viewport
+    const currUuidArr = [ssc.activeSceneUUID, ...ssc.ActiveChildrenUUIDs];
+
+    // Array of UUID's for all the sub-scenes for the newUuid
+    const newUuidArr = [newUuid, ...ssc.childrenUuids(newUuid)];
+
+    return newUuidArr.filter(u => !currUuidArr.includes(u) );
+}
+
+function removePlaceables(uuid) {
+    const subScene = ssc.getSubSceneTile(uuid);
+    const placeables = ["drawings", "lights", "notes", "sounds", "templates", "foreground", "background", "tokens", "walls"];
     const pDict = {
-        drawings: () => canvas.drawings.objects.removeChildren(),
-        lights : () => canvas.lighting.objects.removeChildren(),
-        notes : () => canvas.notes.objects.removeChildren(),
-        sounds: () => canvas.sounds.objects.removeChildren(),
-        templates: () => canvas.templates.objects.removeChildren(),
-        tiles: () => {
-            canvas.foreground.objects.removeChildren();
-            canvas.background.objects.removeChildren();
-        },
-        tokens: () => canvas.tokens.objects.removeChildren(),
-        walls: () => {
-            canvas.controls.doors.removeChildren();
-            canvas.walls.objects.removeChildren();
-        }
+        drawings: canvas.drawings,
+        lights : canvas.lighting,
+        notes : canvas.notes,
+        sounds: canvas.sounds,
+        templates: canvas.templates,
+        foreground: canvas.foreground,
+        background: canvas.background,
+        tokens: canvas.tokens,
+        walls: canvas.walls
     }
 
     for (const placeable of placeables) {
-        pDict[placeable]();
+        const filtered = pDict[placeable].placeables.filter(p => p?.parentSubScene?.includes(subScene.id));
+        for (const p of filtered) {
+            pDict[placeable].objects.removeChild(p);
+
+            if ( placeable === "walls" && p.data.door === 1 ) {
+                p.doorControl.removeAllListeners();
+                p.doorControl.destroy();
+            }
+        }
     }
 }
 
-async function newSubScene(uuid) {
-    ssc.cacheActiveScene(uuid);
-    clearAllPlaceables();
-
-        // Scene is empty.  Build the scene using flag data.  
-    // Cache the active sub-scene
-    await cacheSubScene(ssc.activeScene, {parent: true});
-
-    // Cache the children sub-scenes
-    for (const data of ssc.ActiveChildren) {
-        await cacheSubScene(data[ssc.subSceneChildrenFlags[0]]);
+function removeSubScenes(uuids) {
+    for (const uuid of uuids) {
+        const subScene = ssc.getSubSceneTile(uuid);
+        // If the sprite isn't cached for some reason...
+        if ( !ssc.spriteFromCache(uuid) ) ssc.cacheSubSceneSprite(uuid, subScene.tile)
+        // Remove the sprite from the sub-scene
+        subScene.removeChildren();
+        subScene.texture = undefined;
+        subScene.tile = undefined;
+        // Also remove the placeables...
+        removePlaceables(uuid);
     }
+}
 
-    // Resize the scene to fit the active scene and it's children sub-scenes.
-    localResizeScene(ssc.ActiveBounds);
+function updatePlaceablesLoc(vector) {
+    const placeables = ["drawings", "lights", "notes", "sounds", "templates", "foreground", "background", "tokens", "walls"];
+    const pDict = {
+        drawings: canvas.drawings,
+        lights : canvas.lighting,
+        notes : canvas.notes,
+        sounds: canvas.sounds,
+        templates: canvas.templates,
+        foreground: canvas.foreground,
+        background: canvas.background,
+        tokens: canvas.tokens,
+        walls: canvas.walls
+    }
+    for (const placeable of placeables) {
+        const placeablesArr = pDict[placeable].placeables;
+        for (const p of placeablesArr) {
+            if ( placeable === "background" && ssc.hasSubSceneInCache(p.id) ) continue;
+            if ( placeable === "walls" ) {
+                p.data.c[0] += vector.x; 
+                p.data.c[1] += vector.y;
+                p.data.c[2] += vector.x;
+                p.data.c[3] += vector.y;
+                if ( p.data.door === 1 ) {
+                    p.doorControl.reposition();
+            }
+            } else {
+                p.data.x = p.data._source.x += vector.x;
+                p.data.y = p.data._source.y += vector.y;
+            }
 
-    // Add sub-scene tiles to the canvas and to canvas.background
-    populateScene(ssc.activeScene);
-
-    // Add placeables to all sub-scenes in the viewport
-    await populatePlaceables();
+            if ( placeable === "walls" ) continue;
+            p.position.set(p.position.x += vector.x, p.position.y += vector.y);
+        }
+    }
 }
