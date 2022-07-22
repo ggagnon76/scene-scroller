@@ -253,12 +253,6 @@ function cacheInScenePlaceables(scene, tile) {
             const data = p.toObject();
 
             switch(placeable) {
-                case "walls":
-                    data.c[0] = data.c[0] / tile.data.width * 1000;
-                    data.c[1] = data.c[1] / tile.data.height * 1000;
-                    data.c[2] = data.c[2] / tile.data.width * 1000;
-                    data.c[3] = data.c[3] / tile.data.height * 1000;
-                    break;
                 case "lights":
                     const dw = Math.round(data.config.dim / tile.data.width * 1000);
                     const dh = Math.round(data.config.dim / tile.data.height * 1000);
@@ -358,8 +352,9 @@ async function cacheSubScene(uuids, {isGrandChild = false}={}) {
  */
 async function populateScene(uuid, {isParent = false,}={}) {
 
-    const tile = ssc.getSubSceneTile(uuid);
+    const subScene = ssc.getSubSceneTile(uuid);
     const activeSceneSource = ssc.compendiumSourceFromCache(uuid);
+    const activeSceneLoc = activeSceneSource.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]);
 
     if ( isParent ) {
         // Cache this as the new activeScene
@@ -369,25 +364,24 @@ async function populateScene(uuid, {isParent = false,}={}) {
         await localResizeScene(activeSceneBounds);
     }
 
-    // The cached tile is unaware of the current scene size or padding
+    // The cached subScene is unaware of the current scene size or padding
     // If we're updating the scene, the current location may be incorrect too.
     const d = canvas.dimensions;
     if ( isParent ) {
-        const activeSceneLoc = activeSceneSource.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]);
-        tile.data.x = tile.data._source.x = activeSceneLoc.x + d.paddingX;
-        tile.data.y = tile.data._source.y = activeSceneLoc.y + d.paddingY;
+        subScene.data.x = subScene.data._source.x = activeSceneLoc.x + d.paddingX;
+        subScene.data.y = subScene.data._source.y = activeSceneLoc.y + d.paddingY;
     } else {
         const childrenFlags = ssc.ActiveChildrenFlags;
         const childFlags = childrenFlags.filter(c => c[ssc.subSceneChildrenFlags[0]].includes(uuid)).pop();
-        tile.data.x = tile.data._source.x = childFlags.ChildCoords.x + d.paddingX;
-        tile.data.y = tile.data._source.y = childFlags.ChildCoords.y + d.paddingY;
+        subScene.data.x = subScene.data._source.x = childFlags.ChildCoords.x + d.paddingX;
+        subScene.data.y = subScene.data._source.y = childFlags.ChildCoords.y + d.paddingY;
     }
 
-    if ( tile.texture === undefined ) {
+    if ( subScene.texture === undefined ) {
         const sprite = ssc.spriteFromCache(uuid)
-        initializeTile(tile, sprite);
+        initializeTile(subScene, sprite);
     }
-    tile.position.set(tile.data.x, tile.data.y);
+    subScene.position.set(subScene.data.x, subScene.data.y);
 
     // populate child sub-scenes
     if ( isParent ) { 
@@ -533,44 +527,50 @@ function populatePlaceables(uuids) {
     for (const placeable of placeables) {
         ssc[placeable].forEach(async (p) => {
 
-            let tile;
+            let subScene;
             if ( placeable === "tokens" ) {
                 const tokenParentUUID = p.document.getFlag(ModuleName, ssc.tokenFlags[0]);
-                tile = ssc.getSubSceneTile(tokenParentUUID);
-            } else tile = ssc.getSubSceneTile(p.parentSubScene[0])
+                subScene = ssc.getSubSceneTile(tokenParentUUID);
+            } else if ( placeable === "walls" && p.parentSubScene.length > 1 ) {
+                // Walls can belong to two sub scenes.  Need to pick the correct one!
+                subScene = ssc.getSubSceneTile(p.parentSubScene[0]);
+                const subScene2 = ssc.getSubSceneTile(p.parentSubScene[1]);
+                subScene = uuids.includes(subScene.compendiumSubSceneUUID) ? subScene : subScene2;
+            } else subScene = ssc.getSubSceneTile(p.parentSubScene[0]);
 
-            if ( !uuids.includes(tile.compendiumSubSceneUUID) ) return;
+
+            if ( !uuids.includes(subScene.compendiumSubSceneUUID) ) return;
+
+            const subSceneSource = ssc.compendiumSourceFromCache(subScene.compendiumSubSceneUUID);
+            const sourcePlaceable = subSceneSource[placeable].filter(w => w.id === p.id).pop();
+
 
             switch(placeable) {
-                case "walls": 
-                    p.data.c[0] = p.data.c[0] / 1000 * tile.data.width + tile.data.x;
-                    p.data.c[1] = p.data.c[1] / 1000 * tile.data.height + tile.data.y;
-                    p.data.c[2] = p.data.c[2] / 1000 * tile.data.width + tile.data.x;
-                    p.data.c[3] = p.data.c[3] / 1000 * tile.data.height + tile.data.y;
+                case "walls":
+                    // If the wall is already in the scene, don't display it again!
+                    if ( canvas.walls.placeables.filter(w => w.id === p.id).length >= 1 ) return;
+                    p.data.c[0] = sourcePlaceable.data.c[0] + subScene.data.x;
+                    p.data.c[1] = sourcePlaceable.data.c[1] + subScene.data.y;
+                    p.data.c[2] = sourcePlaceable.data.c[2] + subScene.data.x;
+                    p.data.c[3] = sourcePlaceable.data.c[3] + subScene.data.y;
                     break;
                 case "lights":
-                    const dw = Math.round(p.data.config.dim / 1000 * tile.data.width);
-                    const dh = Math.round(p.data.config.dim / 1000 * tile.data.height);
-                    p.data.config.dim = dw < dh ? dw : dh;
-                    const bw = Math.round(p.data.config.bright / 1000 * tile.data.width);
-                    const bh = Math.round(p.data.config.bright / 1000 * tile.data.height);
-                    p.data.config.dim = bw < bh ? bw : bh;
+                    p.data.config.dim = sourcePlaceable.data.config.dim;
+                    p.data.config.bright = sourcePlaceable.data.config.bright;
                     break;
                 case "sounds":
-                    const rw = Math.round(p.data.radius / 1000 * tile.data.width);
-                    const rh = Math.round(p.data.radius / 1000 * tile.data.height);
-                    p.data.radius = rw < rh ? rw : rh;
+                    p.data.radius = sourcePlaceable.data.radius;
                     break;
                 case "tokens" : 
                     const tokenLoc = p.document.getFlag(ModuleName, ssc.tokenFlags[1]);
-                    p.data.x = p.data._source.x = tokenLoc.x + tile.data.x;
-                    p.data.y = p.data._source.y = tokenLoc.y + tile.data.y;
+                    p.data.x = p.data._source.x = tokenLoc.x + subScene.data.x;
+                    p.data.y = p.data._source.y = tokenLoc.y + subScene.data.y;
                     break;
             }
 
              if ( placeable !== "walls" && placeable !== "tokens" ) {
-                p.data.x = p.data._source.x = Math.round(p.data.x / 1000 * tile.data.width) + tile.data.x;
-                p.data.y = p.data._source.y = Math.round(p.data.y / 1000 * tile.data.height) + tile.data.y;
+                p.data.x = p.data._source.x = sourcePlaceable.data.x + subScene.data.x;
+                p.data.y = p.data._source.y = sourcePlaceable.data.y + subScene.data.y;
             }
 
             pDict[placeable](p);
@@ -822,9 +822,11 @@ async function tokenDragDrop(event) {
     /* The active scene changes.    */
     /****************************** */
 
+    // What are the sub-scenes that will be added?
+    const scenesToAdd = subScenesToAdd(updates[0].destinationSubScene.compendiumSubSceneUUID)
     // What are the sub-scenes that need to be removed?
     const scenesToRemove = subScenesToRemove(updates[0].destinationSubScene.compendiumSubSceneUUID);
-    const scenesToAdd = subScenesToAdd(updates[0].destinationSubScene.compendiumSubSceneUUID)
+    // Remove sub-scenes that are now grandchildren
     removeSubScenes(scenesToRemove);
 
     // Save the viewport location of the soon to be active sub-scene.  To be used to generate a vector
@@ -834,7 +836,7 @@ async function tokenDragDrop(event) {
         y: tile.data.y
     }
 
-    // Redraw the whole scene with the new sub-scene as the active scene
+    // Redraw the viewport with the new sub-scene as the active scene
     await populateScene(updates[0].destinationSubScene.compendiumSubSceneUUID, {isParent : true});
 
     const vector = {
@@ -971,6 +973,7 @@ function subScenesToAdd(newUuid) {
 
 function removePlaceables(uuid) {
     const subScene = ssc.getSubSceneTile(uuid);
+    const subSceneSource = ssc.compendiumSourceFromCache(uuid);
     const placeables = ["drawings", "lights", "notes", "sounds", "templates", "foreground", "background", "tokens", "walls"];
     const pDict = {
         drawings: canvas.drawings,
@@ -983,16 +986,32 @@ function removePlaceables(uuid) {
         tokens: canvas.tokens,
         walls: canvas.walls
     }
+    const sscDict = {
+        drawings: (d) => ssc.removeDrawing(d),
+        lights: (l) => ssc.removeLight(l),
+        notes: (n) => ssc.removeNote(n),
+        sounds: (s) => ssc.removeSound(s),
+        templates: (t) => ssc.removeTemplate(t),
+        foreground: (t) => ssc.removeTile(t),
+        background: (t) => ssc.removeTile(t),
+        walls: (w) => ssc.removeWall(w)
+    }
 
     for (const placeable of placeables) {
-        const filtered = pDict[placeable].placeables.filter(p => p?.parentSubScene?.includes(subScene.id));
+        const filtered = pDict[placeable].placeables.filter(p => p.parentSubScene?.includes(subScene.id));
         for (const p of filtered) {
-            pDict[placeable].objects.removeChild(p);
-
-            if ( placeable === "walls" && p.data.door === 1 ) {
-                p.doorControl.removeAllListeners();
-                p.doorControl.destroy();
+            // Walls can be shared by two sub scenes.  If that is the case, just remove the reference to the the scene being removed.
+            if ( placeable === "walls" & p.parentSubScene.length > 1 ) {
+                p.parentSubScene = p.parentSubScene.filter(id => id !== subScene.id);
+            } else {
+                if ( placeable === "walls" && p.data.door === 1 ) {
+                    p.doorControl.removeAllListeners();
+                    p.doorControl.destroy();
+                }
+                pDict[placeable].objects.removeChild(p);
             }
+
+            if ( placeable === "tokens" ) continue;
         }
     }
 }
@@ -1042,7 +1061,7 @@ function updatePlaceablesLoc(vector) {
             }
 
             if ( placeable === "walls" ) continue;
-            p.position.set(p.position.x += vector.x, p.position.y += vector.y);
+            p.position.set(p.position.x + vector.x, p.position.y + vector.y);
         }
     }
 }

@@ -286,11 +286,31 @@ export class SceneScroller_Cache {
     }
 
     /**
+     * 
+     * @param {object} wall A Foundry Wall instance
+     * @param {string} id   The ID of the Foundry Tile instance that is triggering the removal of the wall.
+     */
+    removeWall(wall, id) {
+        if ( wall.parentSubScene.length > 1 ) {
+            const filtered = wall.parentSubScene.filter(w => w.parentSubScene !== id);
+            wall.parentSubScene = filtered;
+        } else this.walls.delete(wall.id);
+    }
+
+    /**
      * Adds a light placeable to the cache
      * @param {object} light A Foundry Light instance
      */
     addLight(light) {
         this.lights.set(light.id, light);
+    }
+
+    /**
+     * 
+     * @param {object} light A Foundry Light instance
+     */
+    removeLight(light) {
+        this.lights.delete(light.id);
     }
 
     /**
@@ -302,11 +322,27 @@ export class SceneScroller_Cache {
     }
 
     /**
+     * 
+     * @param {ojbect} note A Foundry Note instance
+     */
+    removeNote(note) {
+        this.notes.delete(note.id);
+    }
+
+    /**
      * Adds a sound placeable to the cache
      * @param {object} sound A Foundry Sound instance
      */
     addSound(sound) {
         this.sounds.set(sound.id, sound);
+    }
+
+    /**
+     * 
+     * @param {object} sound A Foundry Sound instance
+     */
+    removeSound(sound) {
+        this.sounds.delete(sound.id);
     }
 
     /**
@@ -318,6 +354,14 @@ export class SceneScroller_Cache {
     }
 
     /**
+     * 
+     * @param {object} template A Foundry Template instance
+     */
+    removeTemplate(template) {
+        this.templates.delete(template.id);
+    }
+
+    /**
      * Adds a tile placeable to the cache
      * @param {object} tile A Foundry Tile instance
      */
@@ -326,11 +370,27 @@ export class SceneScroller_Cache {
     }
 
     /**
+     * 
+     * @param {object} tile A Foundry Tile instance
+     */
+    removeTile(tile) {
+        this.tiles.delete(tile.id);
+    }
+
+    /**
      * Adds a drawing placeable to the cache
      * @param {object} drawing A Foundry Drawing instance
      */
     addDrawing(drawing) {
         this.drawings.set(drawing.id, drawing);
+    }
+
+    /**
+     * 
+     * @param {object} drawing A Foundry Drawing instance
+     */
+    removeDrawing(drawing) {
+        this.drawings.delete(drawing.id);
     }
 
     /*************************************************************************************/
