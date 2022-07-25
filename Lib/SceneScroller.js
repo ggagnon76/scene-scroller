@@ -54,6 +54,7 @@ export class SceneScroller_Cache {
         this.tokens = new Map();
         this.compendiumSources = new Map();
         this.sprites = new Map();
+        this.selTokenApp = null;
 
         this._initialize();
     }

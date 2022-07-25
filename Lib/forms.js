@@ -1,5 +1,5 @@
-import { ModuleName } from "../ss-initialize.js";
-import { getUUID } from "./functions.js";
+import { ModuleName, ssc } from "../ss-initialize.js";
+import { getUUID, updateViewport } from "./functions.js";
 
 /** Form application that will be invoked when the DM activates a scene to become
  *  a Scene-Scroller viewport.
@@ -103,50 +103,31 @@ export class ScrollerInitiateScene extends FormApplication {
 
   async getData() {
 
-    // This gets all the sub-scenes (Scene-Tiler tiles) that have all their linked sub-tiles available in the viewport
-    const allSubSceneIDs = canvas.scene.getFlag(ModuleName, "SceneTilerTileIDsArray");  // These are ID's
-    const hasLinkedScenes = [];
-    for (const subSceneID of allSubSceneIDs) {
-      const subScene = canvas.background.get(subSceneID);
-      const sourceUUID = subScene.document.getFlag("scene-tiler", "scene");
-      const source = await fromUuid(sourceUUID);
-      const sceneScrollerTileLinks = subScene.document.getFlag(ModuleName, "LinkedTiles");
-      const allLinkedIDs = [];
-      for (const sceneScrollerTileLink of sceneScrollerTileLinks) {  // These are UUIDs.
-        const linkSource = await fromUuid(sceneScrollerTileLink.SceneUUID);
-        for (const sceneID of allSubSceneIDs) {
-          const tile = canvas.background.get(sceneID);
-          const isTrue = tile.document.getFlag(ModuleName, "SceneName") === linkSource.name;
-          if ( isTrue ) allLinkedIDs.push(tile.id);
-        }
+    // This gets all the sub-scenes that are cached.  Returns the sub-scene UUID, thumbnail and name.
+    const cachedSubScenesData = [];
+    for (const subScene of ssc.allSubScenes) {
+      const subSceneSource = ssc.compendiumSourceFromCache(subScene.compendiumSubSceneUUID); 
+      const obj = {
+        tileId : subScene.compendiumSubSceneUUID,
+        thumb: subSceneSource.thumbnail,
+        name: subSceneSource.name
       }
-      const isLinkedScene = allLinkedIDs.every(id => {
-        return allSubSceneIDs.includes(id);
-      });
-      if ( isLinkedScene ) {
-        if ( canvas.scene.getFlag(ModuleName, "ActiveScene") === subScene.id ) continue;
-        const obj = {
-          tileId : subScene.id,
-          thumb: source.thumbnail,
-          name: source.name
-        }
-        hasLinkedScenes.push(obj);
-      }
+      cachedSubScenesData.push(obj);
     }
+        
 
-    let buttonText = "";
+    let buttonText = game.i18n.localize('SceneScroller.SelectSceneUI.TileButtonText');
     if ( this.tokens ) buttonText = game.i18n.localize('SceneScroller.SelectSceneUI.TokenButtonText');
-    else buttonText = game.i18n.localize('SceneScroller.SelectSceneUI.TileButtonText');
 
     // This gets all the tokens the user has permissions to at least view.
     // We also don't want tokens that are already being controlled in this list.
-    const viewableTokens = canvas.tokens.placeables.filter(t => t.observer === true).filter(t => t._controlled === false);
+    const viewableTokens = ssc.getAllTokens.filter(t => t.observer === true).filter(t => t._controlled === false);
 
 
     // Send list tokens to the template
     return {
       viewableTokens : viewableTokens,
-      viewableScenes : hasLinkedScenes,
+      viewableScenes : cachedSubScenesData,
       isGM: game.user.isGM,
       ssButtonText : buttonText,
       isTokens : this.tokens
@@ -160,18 +141,19 @@ export class ScrollerInitiateScene extends FormApplication {
     html.find('.ss-swap-buttons').click(this.swapMode.bind(this));
   }
 
-  tokenDisplaySubScene(event) {
+  async tokenDisplaySubScene(event) {
     const li =  event.currentTarget.closest(".ss-token-select-list");
     const tokenID = li.dataset.documentId;
-    const token = canvas.tokens.get(tokenID);
-    token.control({releaseOthers: true});
+    const token = ssc.getToken(tokenID);
+    const subSceneUUID = ssc.tokenCurrentSubScene(token);
+    await updateViewport(subSceneUUID);
     this.render(true);
   }
 
   async sceneDisplaySubScene(event) {
     const li =  event.currentTarget.closest(".ss-scene-list");
-    const sceneID = li.dataset.documentId;
-    await SceneScroller.displaySubScenes(sceneID, true);
+    const sceneUUID = li.dataset.documentId;
+    await updateViewport(sceneUUID);
     this.render(true);
   }
 
