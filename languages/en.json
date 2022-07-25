@@ -8,6 +8,11 @@
                 "SelectScene": "Select Scene:"
             }
         },
+        "ConfirmInitiateSceneUI" : {
+            "Title" : "Initiate a Scene Scroller Viewport",
+            "Content1" : "Only convert a new and empty scene.  Doing otherwise can cause unintended results.",
+            "Content2" : "Do you wish to proceed?"
+        },
         "SelectSceneUI" : {
             "Title" : "Control Token",
             "TokenButtonText" : "Sub-Scene List",

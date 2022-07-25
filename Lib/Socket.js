@@ -1,5 +1,4 @@
-import * as utils from "./Functions.js"
-import { SceneScroller } from "./SceneScroller.js"
+import * as utils from "./functions.js"
 import { SocketModuleName } from "../ss-initialize.js"
 
 /** A dictionary of actions.  Avoids typos and VS Code autocompletes, making it much easier to code. */
@@ -20,11 +19,11 @@ export const msgDict = {
 export async function socketWrapper(requestID, data) {
     switch(requestID) {
         case msgDict.preventCanvasDrawTrue:
-            SceneScroller.PreventCanvasDraw = true;
+            preventCanvasDraw = true;
             game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawTrue});
             break;
         case msgDict.preventCanvasDrawFalse:
-            SceneScroller.PreventCanvasDraw = false;
+            preventCanvasDraw = false;
             game.socket.emit(SocketModuleName, {action: msgDict.preventCanvasDrawFalse});
             break;
         case msgDict.refreshAfterResize:
@@ -47,10 +46,10 @@ export async function socketWrapper(requestID, data) {
 export async function message_handler(request) {
     switch (request.action) {
         case msgDict.preventCanvasDrawTrue:
-            SceneScroller.PreventCanvasDraw = true;
+            preventCanvasDraw = true;
             break;
         case msgDict.preventCanvasDrawFalse:
-            SceneScroller.PreventCanvasDraw = false;
+            preventCanvasDraw = false;
             break;
         case msgDict.refreshAfterResize: 
             utils.refreshSceneAfterResize(request.data);
@@ -63,7 +62,7 @@ export async function message_handler(request) {
             await SceneScroller.offsetPlaceables(placeables, vector, save);
             break;
         default:
-            log(false, "Did not find action in message_handler() function.")
-            log(false, "Requested action: " + request.action) 
+            utils.log(false, "Did not find action in message_handler() function.")
+            utils.log(false, "Requested action: " + request.action) 
     }
 }
