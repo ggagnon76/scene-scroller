@@ -2,7 +2,7 @@ import { ModuleName, ssc } from "../ss-initialize.js";
 import { isScrollerScene } from "./functions.js";
 
 /**
- * A class that will be publicly available containing default values for
+ * A class that will be publicly available containing a schema for
  * viewport, tile and token flags.
  */
 export class SCSC_Flag_Schema {
@@ -16,7 +16,8 @@ export class SCSC_Flag_Schema {
     static compendiumSceneFlags = {
         SubSceneChildren: [],
         Bounds: {},
-        Coords: {}
+        Coords: {},
+        Polygon : []
     }
 
     static subSceneChildrenFlags = {
@@ -179,14 +180,14 @@ export class SceneScroller_Cache {
      * @param {object} token A Foundry Token instance
      */
     async cacheToken(token) {
-        this.tokens.set(token.id, token);
+        this.tokens.set(token.document.ss_id, token);
         if ( game.user.isGM ) {
             const data = token.document.toObject();
-            data._id = token.data._id;
+            data.ss_id = token.document.ss_id;
             const currArr = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]) || [];
             currArr.push(JSON.stringify(data));
             await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], currArr);
-            await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], token.id);
+            await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], token.document.ss_id);
         }
     }
 

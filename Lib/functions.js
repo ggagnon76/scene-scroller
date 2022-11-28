@@ -32,7 +32,7 @@ import { message_handler } from "./Socket.js";
  * @returns {boolean}   
  */
 export function isScrollerScene(scene = canvas.scene) {
-    if (scene?.data?.flags?.hasOwnProperty(ModuleName) || ssc !== undefined) return true;
+    if (scene?.flags?.hasOwnProperty(ModuleName) || ssc !== undefined) return true;
     return false;
 }
 
@@ -57,35 +57,73 @@ export function isScrollerScene(scene = canvas.scene) {
 export async function localResizeScene(area) {
     log(false, "Executing 'localResizeScene() function.");
 
-    const d = canvas.dimensions;
-    canvas.dimensions = canvas.constructor.getDimensions({
-        width: area.width,
-        height: area.height,
-        size: d.size,
-        gridDistance: d.distance,
-        padding: canvas.scene.data.padding,
-        shiftX: d.shiftX,
-        shiftY: d.shiftY,
-        grid: canvas.scene.data.grid
+    const sceneWidth = area.width;
+    const sceneHeight = area.height;
+    const gridType = canvas.grid.type;
+    const gridCls = BaseGrid.implementationFor(gridType);
+    const gridPadding = gridCls.calculatePadding(gridType, sceneWidth, sceneHeight, canvas.grid.size, canvas.scene.padding, {
+        legacy: canvas.scene.flags.core?.legacyHex
     });
+    const sceneX = gridPadding.x - canvas.scene.background.offsetX;
+    const sceneY = gridPadding.y - canvas.scene.background.offsetY;
 
-    const updates = ["stage", "sight", "controls", "drawings", "lighting", "notes", "sounds", "templates", "background", "foreground",  "tokens", "walls"];
-    canvas.sight.height = canvas.dimensions.height;
-    canvas.sight.width = canvas.dimensions.width;
+    const data = {
+        width: gridPadding.width,
+        height: gridPadding.height,
+        size: canvas.grid.size,
+        rect: new PIXI.Rectangle(0,0, gridPadding.width, gridPadding.height),
+        sceneX: sceneX,
+        sceneY: sceneY,
+        sceneWidth: sceneWidth,
+        sceneHeight: sceneHeight,
+        sceneRect: new PIXI.Rectangle(sceneX, sceneY, sceneWidth, sceneHeight),
+        distance: canvas.dimensions.distance,
+        ratio: sceneWidth/sceneHeight,
+        maxR: Math.hypot(gridPadding.width, gridPadding.height)
+    }
+
+    foundry.utils.mergeObject(canvas.dimensions, data);
+
+    canvas.walls._draw();
+
+    const updates = ["stage", "drawings", "environment", "grid", "hidden", "lighting", "notes", "rendered", "sounds", "templates", "tiles", "tokens", "walls", "weather"];
 
     for (const u of updates) {
         canvas[u].hitArea = canvas.dimensions.rect;
     }
-    canvas.walls._createBoundaries();
-    await canvas.sight.draw();
-    await canvas.grid.draw();
-    canvas.background.drawOutline(canvas.outline);
-    canvas.msk.clear().beginFill(0xFFFFFF, 1.0).drawShape(canvas.dimensions.rect).endFill();
-    canvas.primary.mask = canvas.msk;
-    canvas.effects.mask = canvas.msk;
 
-    const bgRect = canvas.dimensions.rect.clone().pad(CONFIG.Canvas.blurStrength * 2);
-    canvas.lighting.illumination.background.clear().beginFill(0xFFFFFF, 1.0).drawShape(bgRect).endFill();
+    const outline = new PIXI.Graphics();
+    const {scene, dimensions} = canvas;
+    const displayCanvasBorder = scene.padding !== 0;
+    const displaySceneOutline = !scene.background.src;
+    if ( !(displayCanvasBorder || displaySceneOutline) ) return;
+    if ( displayCanvasBorder ) outline.lineStyle({
+      alignment: 1,
+      alpha: 0.75,
+      color: 0x000000,
+      join: PIXI.LINE_JOIN.BEVEL,
+      width: 4
+    }).drawShape(dimensions.rect);
+    if ( displaySceneOutline ) outline.lineStyle({
+      alignment: 1,
+      alpha: 0.25,
+      color: 0x000000,
+      join: PIXI.LINE_JOIN.BEVEL,
+      width: 4
+    }).beginFill(0xFFFFFF, 0.025).drawShape(dimensions.sceneRect).endFill();
+
+    canvas.interface.removeChildAt(0);
+    canvas.interface.addChildAt(outline, 0);
+    canvas.grid.draw();
+
+    canvas.fog.configureResolution();
+
+    const cr = canvas.dimensions.rect;
+    canvas.masks.canvas.clear().beginFill(0xFFFFFF, 1.0).drawRect(cr.x, cr.y, cr.width, cr.height).endFill();
+    canvas.primary.sprite.mask = canvas.primary.mask = canvas.perception.mask = canvas.effects.mask = canvas.interface.grid.mask = canvas.masks.canvas;
+
+    canvas.effects.illumination.draw();
+    canvas.effects.visibility.draw();
 }
 
 /**
@@ -95,10 +133,33 @@ export async function localResizeScene(area) {
 async function placeableDraw(placeable) {
     await placeable.draw();
 
+    // Have to update the wall vertices.  Wall.#initializeVertices() is private.  So run Wall._onUpdate().
+    if ( placeable instanceof Wall) {
+        // Update the vertices
+        const data = {
+            c: placeable.document.c,
+            _id: placeable.document._id
+        }
+        const options = [
+            {
+                diff: true,
+            },
+            game.user.id
+        ]
+        placeable._onUpdate(data, ...options);
+
+        // Draw door controls
+        if ( placeable.document.door === 1 ) {
+            drawDoorControl(placeable);
+    }
+    }
+
     // Replace the listener for drag drop so Foundry doesn't try to save change to database.  Update placeable coords instead.
     let placeableDragDrop;
     if ( placeable instanceof Token) {
         placeableDragDrop = (event) => tokenDragDrop(event);
+        const mgr = placeable._createInteractionManager();
+        placeable.mouseInteractionManager = mgr.activate();
     } else {
         placeableDragDrop = _placeableDragDrop.bind(placeable);
     }
@@ -143,55 +204,19 @@ function locInSubScenes(loc) {
     for (const sceneUUID of viewportSubScenesUUIDs) {
         const sceneTile = ssc.getSubSceneTile(sceneUUID);
 
-        if ( !sceneTile._alphaMap ) sceneTile._createAlphaMap({keepPixels: true});
-
         // Normalize token location to sub-scene coordinates
-        const x = loc.x - sceneTile.data.x;
-        const y = loc.y - sceneTile.data.y;
+        const x = loc.x - sceneTile.x;
+        const y = loc.y - sceneTile.y;
 
-        // Test against the bounding box of the sub-scene
-        if ( (x < sceneTile._alphaMap.minX) || (x > sceneTile._alphaMap.maxX) ) continue;
-        if ( (y < sceneTile._alphaMap.minY) || (y > sceneTile._alphaMap.maxY) ) continue;
+        // Test against the image polygon of the sub-scene
+        const clipperPt = new ClipperLib.IntPoint(x, y);
+        if ( !ClipperLib.Clipper.PointInPolygon(clipperPt, sceneTile.imagePath) ) continue;
 
         subSceneArray.push(sceneTile);
     }
 
     return subSceneArray;
 }
-
-/**
- * Determines if a location is valid (not in transparent areas) in all sub-scenes supplied in an array
- * If there are more than one valid sub-scenes, the function returns the first one.
- * @param {object} loc {x: <number>, y: <number>}
- * @param {object} scenes An array of sub-scene objects (tiles)
- * @returns {object}    A Foundry Tile instance
- */
-function locInSubSceneValidAlpha(loc, scenes) {
-    const subSceneArrayByPX = [];
-    // Skip the following algorithm if there's just one sub-scene in the array
-    if ( scenes.length > 1 ) {
-        // Test a specific pixel for each sub-scene
-        for (const sScene of scenes) {
-            // Normalize coordinates to tile top left corner
-            const coord = {
-                x: loc.x - sScene.data.x,
-                y: loc.y - sScene.data.y
-            };
-        
-            const px = (Math.round(coord.y) * Math.round(Math.abs(sScene.data.width))) + Math.round(coord.x);
-            const isInSubScene = sScene._alphaMap.pixels[px] === 1;
-            if ( isInSubScene ) subSceneArrayByPX.push(sScene);
-        }    
-    }
-
-    // Check for edge case where token is dropped on a tile, but in an area of zero alpha
-    if ( !subSceneArrayByPX.length && scenes.length > 1 ) {
-        return "Error: In Zero-Alpha";
-    }
-
-    // If there are still more than one possible sub-scenes, then just take the first one.  (So random)
-    return subSceneArrayByPX[0] || scenes[0];
-} 
 
 /*************************************************************************************/
 /* onReady() and supporting functions */
@@ -259,15 +284,11 @@ function cacheInScenePlaceables(scene, tile) {
     }
 }
 
-function initializeTile(tile, sprite) {
-    tile.texture = sprite.texture;
-    tile.tile = tile.addChild(sprite);
-    tile.tile.anchor.set(0.5,0.5);
+function initializeTile(tileDoc) {
 
-    tile.tile.scale.x = tile.data.width / tile.texture.width;
-    tile.tile.scale.y = tile.data.height / tile.texture.height;
-    tile.tile.position.set(Math.abs(tile.data.width)/2, Math.abs(tile.data.height)/2);
-    tile.tile.rotation = Math.toRadians(tile.data.rotation);
+    const tile = new Tile(tileDoc);
+    canvas.scene.collections.tiles.set(tile.id, tile)
+    tile.draw();
 }
 
 /** Given an array of compendium scene UUID's, create Froundry Tiles for each, cache them and recreate the placeables.
@@ -280,47 +301,43 @@ async function cacheSubScene(uuids, {isGrandChild = false}={}) {
 
         if ( !ssc.compendiumSourceFromCache(uuid) ) {
             // Save the tile compendium source in the cache referencing the uuid
-            ssc.cacheCompendiumSource(uuid, await fromUuid(uuid));
+            const source = await fromUuid(uuid);
+            if ( source ) ssc.cacheCompendiumSource(uuid, source);
         }
         const source = ssc.compendiumSourceFromCache(uuid);
+        if ( !source ) continue;
 
         if ( !ssc.spriteFromCache(uuid) ) {
             // Have Foundry load the texture
-            await TextureLoader.loader.load([source.img])
-            ssc.cacheSubSceneSprite(uuid, new PIXI.Sprite(await loadTexture(source.img)));
+            await TextureLoader.loader.load([source.background.src])
+            ssc.cacheSubSceneSprite(uuid, new PIXI.Sprite(await loadTexture(source.background.src)));
         }
-        const tileSprite = ssc.spriteFromCache(uuid);
 
         if ( !ssc.getSubSceneTile(uuid) ) {
             // Create a local memory tile for this source.  (not saved to database)
             const data = {
                 x: 0,
                 y: 0,
-                width: source.dimensions.width,
-                height: source.dimensions.height,
+                width: source.width,
+                height: source.height,
                 overhead: false,
-                img: source.data.img,
+                img: source.background.src,
                 _id: foundry.utils.randomID(16)
             }
             const tileDoc = new TileDocument(data, {parent: canvas.scene});
 
             // Save this tile in the cache referencing both tile.id and the scene uuid, for convenience
-            ssc.setSubSceneCache(tileDoc.id, tileDoc.object);
-            ssc.setSubSceneCache(uuid, tileDoc.object);
+            ssc.setSubSceneCache(tileDoc.id, tileDoc);
+            ssc.setSubSceneCache(uuid, tileDoc);
         }
-        const tile = ssc.getSubSceneTile(uuid);
-        tile.compendiumSubSceneUUID = uuid;
+        const tileDoc = ssc.getSubSceneTile(uuid);
+        tileDoc.compendiumSubSceneUUID = uuid;
+
+        const sourcePath = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[3]);
+        tileDoc.imagePath = PolygonMesher.getClipperPathFromPoints(sourcePath);
 
         // Cache the placeables for this sub-scene
-        cacheInScenePlaceables(source, tile);
-
-        if ( isGrandChild ) continue;
-
-        // The position in scene, assuming this tile is the parent.  Needs to be updated if tile is a child.
-        tile.data.x = tile.data._source.x = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).x;
-        tile.data.y = tile.data._source.y = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]).y;
-
-        initializeTile(tile, tileSprite);
+        cacheInScenePlaceables(source, tileDoc);
     }
 }
 
@@ -346,20 +363,17 @@ async function populateScene(uuid, {isParent = false,}={}) {
     // If we're updating the scene, the current location may be incorrect too.
     const d = canvas.dimensions;
     if ( isParent ) {
-        subScene.data.x = subScene.data._source.x = activeSceneLoc.x + d.paddingX;
-        subScene.data.y = subScene.data._source.y = activeSceneLoc.y + d.paddingY;
+        subScene.x = subScene._source.x = activeSceneLoc.x + d.sceneX;
+        subScene.y = subScene._source.y = activeSceneLoc.y + d.sceneY;
     } else {
         const childrenFlags = ssc.ActiveChildrenFlags;
         const childFlags = childrenFlags.filter(c => c[ssc.subSceneChildrenFlags[0]].includes(uuid)).pop();
-        subScene.data.x = subScene.data._source.x = childFlags.ChildCoords.x + d.paddingX;
-        subScene.data.y = subScene.data._source.y = childFlags.ChildCoords.y + d.paddingY;
+        subScene.x = subScene._source.x = childFlags.ChildCoords.x + d.sceneX;
+        subScene.y = subScene._source.y = childFlags.ChildCoords.y + d.sceneY;
     }
 
-    if ( subScene.texture === undefined ) {
-        const sprite = ssc.spriteFromCache(uuid)
-        initializeTile(subScene, sprite);
-    }
-    subScene.position.set(subScene.data.x, subScene.data.y);
+    initializeTile(subScene);
+    subScene.object.position.set(subScene.x, subScene.y);
 
     // populate child sub-scenes
     if ( isParent ) { 
@@ -391,13 +405,13 @@ function _placeableDragDrop(event) {
     const {clones, destination, originalEvent} = event.data;
     if ( !clones || !canvas.grid.hitArea.contains(destination.x, destination.y) ) return false;
     const updates = clones.map(c => {
-        let dest = {x: c.data.x, y: c.data.y};
+        let dest = {x: c.x, y: c.y};
         if ( !originalEvent.shiftKey ) {
-        dest = canvas.grid.getSnappedPosition(c.data.x, c.data.y, this.layer.gridPrecision);
+        dest = canvas.grid.getSnappedPosition(c.x, c.y, this.layer.gridPrecision);
         }
-        c.data.x = c.data._source.x = dest.x;
-        c.data.y = c.data._source.y = dest.y;
-        c.data._id = c._original.id;
+        c.x = c.document.x = dest.x;
+        c.y = c.document.y = dest.y;
+        c._id = c._original.id;
         return c
     });
 
@@ -414,7 +428,9 @@ function _placeableDragDrop(event) {
  * @param {object} p A Foundry Wall instance
  */
 async function drawDoorControl(p) {
-    await p.doorControl.draw();
+    if ( !p.doorControl ) p.doorControl = p.createDoorControl();
+    p.doorControl.draw();
+
     const doorControlLeftClick = _doorControlLeftClick.bind(p);
     const doorControlRightClick = _doorControlRightClick.bind(p);
     p.doorControl.off("mousedown")
@@ -428,10 +444,10 @@ async function drawDoorControl(p) {
  * @param {object} event HTML event
  */
 function _doorControlLeftClick(event) {
-    /** Copied from DoorControls#_onMouseDown() */
+    /** Copied from DoorControls#_onMouseDown(), line 31545 */
     if ( event.data.originalEvent.button !== 0 ) return; // Only support standard left-click
     event.stopPropagation();
-    const state = this.data.ds;
+    const state = this.document.ds;
     const states = CONST.WALL_DOOR_STATES;
 
     // Determine whether the player can control the door at this time
@@ -448,7 +464,7 @@ function _doorControlLeftClick(event) {
     }
 
     /** This portion changed to not attempt to save to db. */
-    this.data.ds = state === states.CLOSED ? states.OPEN : states.CLOSED;
+    this.document.ds = state === states.CLOSED ? states.OPEN : states.CLOSED;
     drawDoorControl(this);
 
     // Doesn't make sense that this has to be done.... ???
@@ -457,11 +473,11 @@ function _doorControlLeftClick(event) {
     }
 
     // Update the lighting and sight
-    canvas.lighting.refresh();
-    canvas.sight.refresh({
-        skipUpdateFog: false,
-        forceUpdateFog: true
-    });
+    canvas.effects.refreshLighting();
+    canvas.perception.update({
+        refreshLighting: true,
+        refreshVision: true
+      }, true);
 }
 
 /**
@@ -470,15 +486,15 @@ function _doorControlLeftClick(event) {
  * @returns 
  */
 function _doorControlRightClick(event) {
-    /** Copied from DoorControls#_onRightDown() */
+    /** Copied from DoorControls#_onRightDown(), line 31575 */
     event.stopPropagation();
     if ( !game.user.isGM ) return;
-    let state = this.data.ds,
+    let state = this.document.ds,
         states = CONST.WALL_DOOR_STATES;
     if ( state === states.OPEN ) return;
 
     /** This portion changed to not attempt to save to db. */
-    this.data.ds = state === states.LOCKED ? states.CLOSED : states.LOCKED;
+    this.document.ds = state === states.LOCKED ? states.CLOSED : states.LOCKED;
     drawDoorControl(this);
 }
 
@@ -487,20 +503,7 @@ function _doorControlRightClick(event) {
  * @param {array<string>}   uuids   An array of UUID strings.  Only placeables belonging to those UUID's get populated.
  */
 function populatePlaceables(uuids) {
-    const placeables = ["drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens", "walls"];
-    const pDict = {
-        drawings: (d) => canvas.drawings.objects.addChild(d),
-        lights : (l) => canvas.lighting.objects.addChild(l),
-        notes : (n) => canvas.notes.objects.addChild(n),
-        sounds: (s) => canvas.sounds.objects.addChild(s),
-        templates: (t) => canvas.templates.objects.addChild(t),
-        tiles: (t) => {
-            if ( t.data.overhead ) return canvas.foreground.objects.addChild(t);
-            return canvas.background.objects.addChild(t);
-        },
-        tokens: (t) => canvas.tokens.objects.addChild(t),
-        walls: (w) => canvas.walls.objects.addChild(w)
-    }
+    const placeables = ["walls", "drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens"];
 
     for (const placeable of placeables) {
         ssc[placeable].forEach(async (p) => {
@@ -528,38 +531,37 @@ function populatePlaceables(uuids) {
                 case "walls":
                     // If the wall is already in the scene, don't display it again!
                     if ( canvas.walls.placeables.filter(w => w.id === p.id).length >= 1 ) return;
-                    p.data.c[0] = sourcePlaceable.data.c[0] + subScene.data.x;
-                    p.data.c[1] = sourcePlaceable.data.c[1] + subScene.data.y;
-                    p.data.c[2] = sourcePlaceable.data.c[2] + subScene.data.x;
-                    p.data.c[3] = sourcePlaceable.data.c[3] + subScene.data.y;
+                    p.document.c[0] = sourcePlaceable.c[0] + subScene.x;
+                    p.document.c[1] = sourcePlaceable.c[1] + subScene.y;
+                    p.document.c[2] = sourcePlaceable.c[2] + subScene.x;
+                    p.document.c[3] = sourcePlaceable.c[3] + subScene.y;
                     break;
                 case "lights":
-                    p.data.config.dim = sourcePlaceable.data.config.dim;
-                    p.data.config.bright = sourcePlaceable.data.config.bright;
+                    p.config.dim = p.config._source.dim = sourcePlaceable.config.dim;
+                    p.config.bright = p.config._source.bright = sourcePlaceable.config.bright;
                     break;
                 case "sounds":
-                    p.data.radius = sourcePlaceable.data.radius;
+                    p.document.radius = sourcePlaceable.radius;
                     break;
                 case "tokens" : 
                     const tokenLoc = p.document.getFlag(ModuleName, ssc.tokenFlags[1]);
-                    p.data.x = p.data._source.x = tokenLoc.x + subScene.data.x;
-                    p.data.y = p.data._source.y = tokenLoc.y + subScene.data.y;
+                    p.document.x =  tokenLoc.x + subScene.x;
+                    p.document.y =  tokenLoc.y + subScene.y;
                     break;
             }
 
              if ( placeable !== "walls" && placeable !== "tokens" ) {
-                p.data.x = p.data._source.x = sourcePlaceable.data.x + subScene.data.x;
-                p.data.y = p.data._source.y = sourcePlaceable.data.y + subScene.data.y;
+                p.x = p.document.x = p.document._source.x = sourcePlaceable.x + subScene.x;
+                p.x = p.document.y = p.document._source.y = sourcePlaceable.y + subScene.y;
             }
 
-            pDict[placeable](p);
-            placeableDraw(p);
-
-            if ( placeable === "walls" && p.data.door === 1 ) {
-                    drawDoorControl(p);
-            }
+            canvas.scene.collections[placeable].set(p.id, p)
+            canvas[p.layer.options.name].objects.addChild(p);
+            if ( p.layer.quadtree ) p.layer.quadtree.insert({r: p.bounds, t: p});
+            await placeableDraw(p);
         })
     }
+    canvas.perception.update({refreshLighting: true, refreshVision: true}, true);
 }
 
 const debounceGrandChildCache = foundry.utils.debounce( async (uuidArr) => {
@@ -635,7 +637,7 @@ export async function initialize() {
     if ( !game.user.isGM ) return;
 
     game.socket.on(SocketModuleName, message_handler);
-    game.modules.get(ModuleName).schema = SCSC_Flag_Schema;
+    game.modules.get(ModuleName).struct = SCSC_Flag_Schema;
 
     const result = await new Promise(resolve => {
         new Dialog({
@@ -690,7 +692,7 @@ const debounceTokenUpdate = foundry.utils.debounce( (tokenArr) => {
  * @returns {object}    array of updates
  */
 function core_onDragLeftDrop(event) {
-    const clones = event.data.clones || [];
+    const clones = event.clones || [];
     const {originalEvent, destination} = event.data;
 
     // Ensure the cursor destination is within bounds
@@ -700,9 +702,9 @@ function core_onDragLeftDrop(event) {
     const updates = clones.reduce((updates, c) => {
 
       // Get the snapped top-left coordinate
-      let dest = {x: c.data.x, y: c.data.y};
+      let dest = {x: c.x, y: c.y};
       if ( !originalEvent.shiftKey && (canvas.grid.type !== CONST.GRID_TYPES.GRIDLESS) ) {
-        const isTiny = (c.data.width < 1) && (c.data.height < 1);
+        const isTiny = (c.width < 1) && (c.height < 1);
         dest = canvas.grid.getSnappedPosition(dest.x, dest.y, isTiny ? 2 : 1);
       }
 
@@ -744,16 +746,11 @@ function determineDestination(updates) {
             continue;
         }
 
-        // Check alpha maps to determine which sub-scene(s) the token occupies
-        const destinationSubScene = locInSubSceneValidAlpha({x: update.x, y: update.y}, inScenes)
-
-        // Check for edge case where token is dropped on a tile, but in an area of zero alpha
-        if ( destinationSubScene === "Error: In Zero-Alpha" ) {
-            update.destinationSubScene = null;
-            continue;
+        if ( inScenes.length > 1 ) {
+            log(false, "Token is on overlapping pixels for two sub-scenes.  Choosing the first in the array (random).")
         }
 
-        update.destinationSubScene = destinationSubScene;
+        update.destinationSubScene = subSceneArr[0];
     }
 }
 
@@ -788,12 +785,12 @@ async function tokenDragDrop(event) {
         for (const update of updates) {
             const tok = ssc.getToken(update._id);
             await tok.setPosition(update.x, update.y);
-            tok.data.x = tok.data._source.x = update.x;
-            tok.data.y = tok.data._source.y = update.y;
+            tok.x = tok.document.x = update.x;
+            tok.y = tok.document.y = update.y;
             const currSubScene = ssc.getSubSceneTile(ssc.activeSceneUUID);
             updatedTokenArr.push({
                 token: tok,
-                loc: {x: update.x - currSubScene.data.x, y: update.y - currSubScene.data.y},
+                loc: {x: update.x - currSubScene.x, y: update.y - currSubScene.y},
                 uuid: currSubScene.compendiumSubSceneUUID
             })
         }
@@ -816,16 +813,16 @@ async function tokenDragDrop(event) {
     // Save the viewport location of the soon to be active sub-scene.  To be used to generate a vector
     const tile = ssc.getSubSceneTile(updates[0].destinationSubScene.compendiumSubSceneUUID);
     const oldLoc = {
-        x: tile.data.x,
-        y: tile.data.y
+        x: tile.x,
+        y: tile.y
     }
 
     // Redraw the viewport with the new sub-scene as the active scene
     await populateScene(updates[0].destinationSubScene.compendiumSubSceneUUID, {isParent : true});
 
     const vector = {
-        x: tile.data.x - oldLoc.x,
-        y: tile.data.y - oldLoc.y
+        x: tile.x - oldLoc.x,
+        y: tile.y - oldLoc.y
     }
 
     // Pan the scene by the vector to maintain viewport orientation relative to the new activeScene
@@ -841,12 +838,12 @@ async function tokenDragDrop(event) {
     for (const update of updates) {
         const tok = ssc.getToken(update._id);
         await tok.setPosition(update.x + vector.x, update.y + vector.y);
-        tok.data.x = tok.data._source.x = update.x + vector.x;
-        tok.data.y = tok.data._source.y = update.y + vector.y;
+        tok.x = tok.document.x = update.x + vector.x;
+        tok.y = tok.document.y = update.y + vector.y;
         const currSubScene = ssc.getSubSceneTile(ssc.activeSceneUUID);
         updatedTokenArr.push({
             token: tok,
-            loc: {x: update.x + vector.x - currSubScene.data.x, y: update.y + vector.y - currSubScene.data.y},
+            loc: {x: update.x + vector.x - currSubScene.x, y: update.y + vector.y - currSubScene.y},
             uuid: currSubScene.compendiumSubSceneUUID
         })
     }
@@ -888,8 +885,8 @@ export function tokenCreate(doc, data, options, userId) {
     if ( !isScrollerScene() ) return true;
 
     const d = canvas.dimensions;
-    const tw = doc.data.width * d.size / 2; // Half of Token Width
-    const th = doc.data.height * d.size / 2;  // Half of Token Height
+    const tw = doc.width * d.size / 2; // Half of Token Width
+    const th = doc.height * d.size / 2;  // Half of Token Height
     const tc = {  // Token center
         x: data.x + tw,
         y: data.y + th
@@ -905,24 +902,20 @@ export function tokenCreate(doc, data, options, userId) {
         return false;
     }
 
-    // Check alpha maps to determine which sub-scene(s) the token occupies
-    const finalSubScene = locInSubSceneValidAlpha(tc, subSceneArr)
-
-    // Check for edge case where token is dropped on a tile, but in an area of zero alpha
-    if ( finalSubScene === "Error: In Zero-Alpha" ) {
-        log(false, "Aborting token creation.  Token dropped in area of sub-scene (tile) with zero alpha.");
-        ui.notifications.warn("Token drop location is not in a valid part of any sub-scene.  Token creation aborted.");
-        return false;
+    if ( subSceneArr.length > 1 ) {
+        log(false, "Token is on overlapping pixels for two sub-scenes.  Choosing the first in the array (random).")
     }
 
+    const finalSubScene = subSceneArr[0];
+
     // Update the token flags with the required data.
-    doc.data.update({
+    doc.updateSource({
         [`flags.${ModuleName}.${ssc.tokenFlags[0]}`] : finalSubScene.compendiumSubSceneUUID,
-        [`flags.${ModuleName}.${ssc.tokenFlags[1]}`] : {x: data.x - finalSubScene.data.x, y: data.y - finalSubScene.data.y}
+        [`flags.${ModuleName}.${ssc.tokenFlags[1]}`] : {x: data.x - finalSubScene.x, y: data.y - finalSubScene.y}
     });
 
     // Assign an ID to the token document
-    doc.data._id = foundry.utils.randomID(16);
+    doc.ss_id = foundry.utils.randomID(16);
 
     if ( ssc.selTokenApp === null ) ssc.selTokenApp = new ScrollerViewSubSceneSelector({}, {left: ui.sidebar._element[0].offsetLeft - 205, top: 3}).render(true);
     else ssc.selTokenApp.render(true);
@@ -983,7 +976,7 @@ function removePlaceables(uuids, newSubSceneUUID, bypass = false) {
                 // If YES, don't delete it.
                 if ( newIDArr.some(checkFn) && !bypass ) continue;
 
-                if ( placeable === "walls" && p.data.door === 1 ) {
+                if ( placeable === "walls" && p.door === 1 ) {
                     p.doorControl.removeAllListeners();
                     p.doorControl.destroy();
                 }
@@ -1026,16 +1019,16 @@ function updatePlaceablesLoc(vector) {
         for (const p of placeablesArr) {
             if ( placeable === "background" && ssc.hasSubSceneInCache(p.id) ) continue;
             if ( placeable === "walls" ) {
-                p.data.c[0] += vector.x; 
-                p.data.c[1] += vector.y;
-                p.data.c[2] += vector.x;
-                p.data.c[3] += vector.y;
-                if ( p.data.door === 1 ) {
+                p.c[0] += vector.x; 
+                p.c[1] += vector.y;
+                p.c[2] += vector.x;
+                p.c[3] += vector.y;
+                if ( p.door === 1 ) {
                     p.doorControl.reposition();
             }
             } else {
-                p.data.x = p.data._source.x += vector.x;
-                p.data.y = p.data._source.y += vector.y;
+                p.x = p.document.x += vector.x;
+                p.y = p.document.y += vector.y;
             }
 
             if ( placeable === "walls" ) continue;

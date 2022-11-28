@@ -15,7 +15,7 @@ Hooks.once('init', () => {
 })
 
 Hooks.once('ready', () => {
-    game.modules.get(ModuleName).schema = SCSC_Flag_Schema;
+    game.modules.get(ModuleName).struct = SCSC_Flag_Schema;
     game.modules.get(ModuleName).initialize = () => {
         ssc = new SceneScroller_Cache;
         initialize();
