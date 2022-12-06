@@ -1,5 +1,6 @@
 import { ModuleName, ssc } from "../ss-initialize.js";
-import { isScrollerScene } from "./functions.js";
+import { isScrollerScene, placeableDraw } from "./functions.js";
+import { ScrollerToken } from "./classes.js";
 
 /**
  * A class that will be publicly available containing a schema for
@@ -436,8 +437,12 @@ export class SceneScroller_Cache {
         const tokArray = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]);
         for (const tok of tokArray) {
             const data = JSON.parse(tok);
-            const doc = new TokenDocument(data, {parent: canvas.scene});
-            const token = new Token(doc);
+            // Creating a new TokenDocument will mutate data and scrub out .ss_id
+            const ssId = data.ss_id;
+            const doc = new CONFIG.Token.documentClass(data, {parent: canvas.scene});
+            const token = new ScrollerToken(doc);
+            doc.ss_id = ssId;
+            doc._object = token
             this.tokens.set(token.id, token);
         }
 

@@ -9,15 +9,15 @@
             {{#if isTokens}}
                 {{#each viewableTokens}}
                     <li class="ss-token-select-list" data-document-id="{{this.id}}">
-                        {{#if this.data.img}}
+                        {{#if this.document.texture.src}}
                             <img    class="ss-thumbnail" 
-                                    title=" {{#if this.data.actorData.name}}{{this.data.actorData.name}}
-                                            {{else}} {{this.data.name}}
+                                    title=" {{#if this.actorData.name}}{{this.actorData.name}}
+                                            {{else}} {{this.name}}
                                             {{/if}}"
-                                    src="{{this.data.img}}"/>
+                                    src="{{this.document.texture.src}}"/>
                         {{/if}}
-                        <h4>{{#if this.data.actorData.name}}{{this.data.actorData.name}}
-                            {{else}} {{this.data.name}}
+                        <h4>{{#if this.actorData.name}}{{this.actorData.name}}
+                            {{else}} {{this.name}}
                             {{/if}}
                         </h4>
                     </li>

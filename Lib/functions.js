@@ -1,8 +1,8 @@
 import { ModuleName, ModuleTitle, SocketModuleName, ssc } from "../ss-initialize.js";
+import { ScrollerToken } from "./classes.js";
 import { ScrollerInitiateScene, ScrollerViewSubSceneSelector } from "./forms.js";
 import { SCSC_Flag_Schema } from "./SceneScroller.js";
 import { message_handler } from "./Socket.js";
-
 
 /*************************************************************************************/
 /* Functions that are used in multiple places. */
@@ -56,6 +56,8 @@ export function isScrollerScene(scene = canvas.scene) {
  */
 export async function localResizeScene(area) {
     log(false, "Executing 'localResizeScene() function.");
+
+    canvas.primary.removeChildren();
 
     const sceneWidth = area.width;
     const sceneHeight = area.height;
@@ -122,6 +124,7 @@ export async function localResizeScene(area) {
     canvas.masks.canvas.clear().beginFill(0xFFFFFF, 1.0).drawRect(cr.x, cr.y, cr.width, cr.height).endFill();
     canvas.primary.sprite.mask = canvas.primary.mask = canvas.perception.mask = canvas.effects.mask = canvas.interface.grid.mask = canvas.masks.canvas;
 
+    canvas.primary.draw();
     canvas.effects.illumination.draw();
     canvas.effects.visibility.draw();
 }
@@ -130,7 +133,7 @@ export async function localResizeScene(area) {
  * Redraws the placeable and replaces some eventListeners with custom functions.
  * @param {object} placeable A Foundry instance for any given placeable.
  */
-async function placeableDraw(placeable) {
+export async function placeableDraw(placeable) {
     await placeable.draw();
 
     // Have to update the wall vertices.  Wall.#initializeVertices() is private.  So run Wall._onUpdate().
@@ -151,15 +154,13 @@ async function placeableDraw(placeable) {
         // Draw door controls
         if ( placeable.document.door === 1 ) {
             drawDoorControl(placeable);
-    }
+        }
     }
 
     // Replace the listener for drag drop so Foundry doesn't try to save change to database.  Update placeable coords instead.
     let placeableDragDrop;
     if ( placeable instanceof Token) {
         placeableDragDrop = (event) => tokenDragDrop(event);
-        const mgr = placeable._createInteractionManager();
-        placeable.mouseInteractionManager = mgr.activate();
     } else {
         placeableDragDrop = _placeableDragDrop.bind(placeable);
     }
@@ -287,7 +288,7 @@ function cacheInScenePlaceables(scene, tile) {
 function initializeTile(tileDoc) {
 
     const tile = new Tile(tileDoc);
-    canvas.scene.collections.tiles.set(tile.id, tile)
+    canvas.scene.collections.tiles.set(tile.id, tile.document)
     tile.draw();
 }
 
@@ -361,19 +362,27 @@ async function populateScene(uuid, {isParent = false,}={}) {
 
     // The cached subScene is unaware of the current scene size or padding
     // If we're updating the scene, the current location may be incorrect too.
+    // TO INVESTIGATE:  Using subScene.updateSource() here doesn't work?
     const d = canvas.dimensions;
     if ( isParent ) {
+        //subScene.updateSource({
+        //    x: activeSceneLoc.x + d.sceneX,
+        //    y: activeSceneLoc.y + d.sceneY
+        //})
         subScene.x = subScene._source.x = activeSceneLoc.x + d.sceneX;
         subScene.y = subScene._source.y = activeSceneLoc.y + d.sceneY;
     } else {
         const childrenFlags = ssc.ActiveChildrenFlags;
         const childFlags = childrenFlags.filter(c => c[ssc.subSceneChildrenFlags[0]].includes(uuid)).pop();
+        //subScene.updateSource({
+        //    x: childFlags.ChildCoords.x + d.sceneX,
+        //    y: childFlags.ChildCoords.y + d.sceneY
+        //})
         subScene.x = subScene._source.x = childFlags.ChildCoords.x + d.sceneX;
         subScene.y = subScene._source.y = childFlags.ChildCoords.y + d.sceneY;
     }
 
     initializeTile(subScene);
-    subScene.object.position.set(subScene.x, subScene.y);
 
     // populate child sub-scenes
     if ( isParent ) { 
@@ -502,11 +511,11 @@ function _doorControlRightClick(event) {
  * Adds all placeables that need to be added to the viewport.
  * @param {array<string>}   uuids   An array of UUID strings.  Only placeables belonging to those UUID's get populated.
  */
-function populatePlaceables(uuids) {
+async function populatePlaceables(uuids) {
     const placeables = ["walls", "drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens"];
 
     for (const placeable of placeables) {
-        ssc[placeable].forEach(async (p) => {
+        for (const p of ssc[placeable].values()) {
 
             let subScene;
             if ( placeable === "tokens" ) {
@@ -531,36 +540,49 @@ function populatePlaceables(uuids) {
                 case "walls":
                     // If the wall is already in the scene, don't display it again!
                     if ( canvas.walls.placeables.filter(w => w.id === p.id).length >= 1 ) return;
-                    p.document.c[0] = sourcePlaceable.c[0] + subScene.x;
-                    p.document.c[1] = sourcePlaceable.c[1] + subScene.y;
-                    p.document.c[2] = sourcePlaceable.c[2] + subScene.x;
-                    p.document.c[3] = sourcePlaceable.c[3] + subScene.y;
+                    p.document.updateSource({
+                        c: [
+                            sourcePlaceable.c[0] + subScene.x,
+                            sourcePlaceable.c[1] + subScene.y,
+                            sourcePlaceable.c[2] + subScene.x,
+                            sourcePlaceable.c[3] + subScene.y
+                        ]
+                    })
                     break;
                 case "lights":
-                    p.config.dim = p.config._source.dim = sourcePlaceable.config.dim;
-                    p.config.bright = p.config._source.bright = sourcePlaceable.config.bright;
+                    p.config.updateSource({
+                        dim: sourcePlaceable.config.dim,
+                        bright: sourcePlaceable.config.bright
+                    })
                     break;
                 case "sounds":
-                    p.document.radius = sourcePlaceable.radius;
+                    p.document.updateSource({
+                        radius: sourcePlaceable.radius
+                    })
                     break;
                 case "tokens" : 
                     const tokenLoc = p.document.getFlag(ModuleName, ssc.tokenFlags[1]);
-                    p.document.x =  tokenLoc.x + subScene.x;
-                    p.document.y =  tokenLoc.y + subScene.y;
+                    p.document.updateSource({
+                        x: tokenLoc.x + subScene.x,
+                        y: tokenLoc.y + subScene.y
+                    })
                     break;
             }
 
              if ( placeable !== "walls" && placeable !== "tokens" ) {
-                p.x = p.document.x = p.document._source.x = sourcePlaceable.x + subScene.x;
-                p.x = p.document.y = p.document._source.y = sourcePlaceable.y + subScene.y;
+                p.document.updateSource({
+                    x: sourcePlaceable.x + subScene.x,
+                    y: sourcePlaceable.y + subScene.y
+                })
             }
 
-            canvas.scene.collections[placeable].set(p.id, p)
+            canvas.scene.collections[placeable].set(p.id, p.document)
             canvas[p.layer.options.name].objects.addChild(p);
             if ( p.layer.quadtree ) p.layer.quadtree.insert({r: p.bounds, t: p});
             await placeableDraw(p);
-        })
+        }
     }
+    canvas.walls._deactivate();
     canvas.perception.update({refreshLighting: true, refreshVision: true}, true);
 }
 
@@ -607,7 +629,7 @@ export async function onReady(uuid = null) {
     await populateScene(ssc.activeSceneUUID, {isParent : true});
 
     // Add placeables to all sub-scenes in the viewport
-    populatePlaceables(uuidsArr);
+    await populatePlaceables(uuidsArr);
 
     if ( ssc.getAllTokens.length ) {
         // Pan to active token
@@ -832,7 +854,7 @@ async function tokenDragDrop(event) {
     updatePlaceablesLoc(vector);
 
     // Add missing placeables
-    populatePlaceables(scenesToAdd);
+    await populatePlaceables(scenesToAdd);
 
     // Move tokens
     for (const update of updates) {
@@ -853,23 +875,6 @@ async function tokenDragDrop(event) {
     // Cache the textures for all the grandchildren
     debounceGrandChildCache(ssc.ActiveChildrenUUIDs);
 }
-
-/**
- * A debounced function to cache a created token, and add it to the canvas (local only)
- * Debounced because 'preCreateToken' hook is not async, and this function is.  (STILL TRUE??)
- * @param {object} token    A Foundry Token instance
- */
-const debounceTokenCreation = foundry.utils.debounce( (token) => {
-    // Cache the token
-    ssc.cacheToken(token);
-    // Add the token to the scene
-    canvas.tokens.objects.addChild(token);
-
-    // Draw token and update eventListeners
-    placeableDraw(token);
-
-    token.visible = true;
-}, 50);
 
 /**
  * Called by a 'preCreateToken' hook.  Stops the standard Foundry token creation workflow
@@ -910,18 +915,29 @@ export function tokenCreate(doc, data, options, userId) {
 
     // Update the token flags with the required data.
     doc.updateSource({
+        _id : foundry.utils.randomID(16),
         [`flags.${ModuleName}.${ssc.tokenFlags[0]}`] : finalSubScene.compendiumSubSceneUUID,
         [`flags.${ModuleName}.${ssc.tokenFlags[1]}`] : {x: data.x - finalSubScene.x, y: data.y - finalSubScene.y}
     });
 
-    // Assign an ID to the token document
+    // Assign our own ID to the token document
     doc.ss_id = foundry.utils.randomID(16);
+    
+    // Create token placeable
+    const tok = new ScrollerToken(doc);
+    doc._object = tok;
+    // Cache the token
+    ssc.cacheToken(tok);
+    // Add the token to the scene
+    canvas.tokens.objects.addChild(tok);
+
+    // Draw token and update eventListeners
+    placeableDraw(tok);
+
+    tok.visible = true;
 
     if ( ssc.selTokenApp === null ) ssc.selTokenApp = new ScrollerViewSubSceneSelector({}, {left: ui.sidebar._element[0].offsetLeft - 205, top: 3}).render(true);
     else ssc.selTokenApp.render(true);
-    
-    // Debounce to save the token in the cache and put our own local token on the scene.
-    debounceTokenCreation(new Token(doc));
 
     // Don't allow creation of token in db.
     return false;
@@ -1057,5 +1073,5 @@ export async function updateViewport(newUUID) {
     
     // Add all placeables
     const newUuidArr = [newUUID, ...ssc.childrenUuids(newUUID)];
-    populatePlaceables(newUuidArr);
+    await populatePlaceables(newUuidArr);
 }

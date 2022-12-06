@@ -121,7 +121,7 @@ export class ScrollerInitiateScene extends FormApplication {
 
     // This gets all the tokens the user has permissions to at least view.
     // We also don't want tokens that are already being controlled in this list.
-    const viewableTokens = ssc.getAllTokens.filter(t => t.observer === true).filter(t => t._controlled === false);
+    const viewableTokens = ssc.getAllTokens.filter(t => t.observer === true).filter(t => t.controlled === false);
 
 
     // Send list tokens to the template
