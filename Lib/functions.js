@@ -710,11 +710,12 @@ const debounceTokenUpdate = foundry.utils.debounce( (tokenArr) => {
 }, 1000);
 
 /** A function containing core workflow for a token move by mouse
+ * See Foundry.js, line 47395
  * @param {object} event HTML event
  * @returns {object}    array of updates
  */
 function core_onDragLeftDrop(event) {
-    const clones = event.clones || [];
+    const clones = event.data.clones || [];
     const {originalEvent, destination} = event.data;
 
     // Ensure the cursor destination is within bounds
@@ -772,7 +773,7 @@ function determineDestination(updates) {
             log(false, "Token is on overlapping pixels for two sub-scenes.  Choosing the first in the array (random).")
         }
 
-        update.destinationSubScene = subSceneArr[0];
+        update.destinationSubScene = inScenes[0];
     }
 }
 
@@ -806,9 +807,13 @@ async function tokenDragDrop(event) {
         // Move tokens
         for (const update of updates) {
             const tok = ssc.getToken(update._id);
-            await tok.setPosition(update.x, update.y);
-            tok.x = tok.document.x = update.x;
-            tok.y = tok.document.y = update.y;
+            tok.document.updateSource({
+                x: update.x,
+                y: update.y
+            })
+            // Animate token movement.  See Foundry.js, line 46650
+            tok.animate(update);
+
             const currSubScene = ssc.getSubSceneTile(ssc.activeSceneUUID);
             updatedTokenArr.push({
                 token: tok,
@@ -979,7 +984,7 @@ function removePlaceables(uuids, newSubSceneUUID, bypass = false) {
 
     for (const uuid of uuids) {
         const subScene = ssc.getSubSceneTile(uuid);
-        const placeables = ["drawings", "lighting", "notes", "sounds", "templates", "foreground", "background", "tokens", "walls"];
+        const placeables = ["walls", "drawings", "lighting", "notes", "sounds", "templates", "tiles", "tokens"];
 
         for (const placeable of placeables) {
 
@@ -1008,9 +1013,9 @@ function removeSubScenes(uuids, newSubSceneUUID, bypass = false) {
         // If the sprite isn't cached for some reason...
         if ( !ssc.spriteFromCache(uuid) ) ssc.cacheSubSceneSprite(uuid, subScene.tile)
         // Remove the sprite from the sub-scene
-        subScene.removeChildren();
-        subScene.texture = undefined;
-        subScene.tile = undefined;
+        subScene.object.removeChildren();
+        subScene.object.texture = undefined;
+        subScene.object.tile = undefined;
     }
     // Also remove the placeables...
     removePlaceables(uuids, newSubSceneUUID, bypass);

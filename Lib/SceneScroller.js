@@ -238,12 +238,12 @@ export class SceneScroller_Cache {
     async updateTokenFlags(token, loc, uuid = null) {
 
         // Tokens are local memory only.  Not in db.  Can't use setFlag
-        token.document.data.update({
+        token.document.updateSource({
             [`flags.${ModuleName}.${ssc.tokenFlags[1]}`] : {x: loc.x, y: loc.y}
         });
 
         if ( uuid !== null ) {
-            token.document.data.update({
+            token.document.updateSource({
                 [`flags.${ModuleName}.${ssc.tokenFlags[0]}`] : uuid
             });
         }
