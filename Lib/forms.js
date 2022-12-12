@@ -1,5 +1,6 @@
 import { ModuleName, ssc } from "../ss-initialize.js";
-import { getUUID, updateViewport } from "./functions.js";
+import { getUUID } from "./functions.js";
+import * as Viewport from "./ViewportClass.js";
 
 /** Form application that will be invoked when the DM activates a scene to become
  *  a Scene-Scroller viewport.
@@ -146,14 +147,14 @@ export class ScrollerInitiateScene extends FormApplication {
     const tokenID = li.dataset.documentId;
     const token = ssc.getToken(tokenID);
     const subSceneUUID = ssc.tokenCurrentSubScene(token);
-    await updateViewport(subSceneUUID);
+    await Viewport.updateViewport(subSceneUUID);
     this.render(true);
   }
 
   async sceneDisplaySubScene(event) {
     const li =  event.currentTarget.closest(".ss-scene-list");
     const sceneUUID = li.dataset.documentId;
-    await updateViewport(sceneUUID);
+    await Viewport.updateViewport(sceneUUID);
     this.render(true);
   }
 
