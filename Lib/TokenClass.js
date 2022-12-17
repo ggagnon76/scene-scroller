@@ -1,6 +1,7 @@
 import { ModuleName, ssc } from "../ss-initialize.js";
 import * as Viewport from "./ViewportClass.js";
 import * as Forms from "./forms.js";
+import * as SSCache from "./SceneScrollerClass.js";
 
 // Override Token methods to replace ._id with .ss_id
 export class ScrollerToken extends CONFIG.Token.objectClass {
@@ -11,13 +12,13 @@ export class ScrollerToken extends CONFIG.Token.objectClass {
 }
 
 /**
- * A debounced function to update token data (location, occpied sub-scene). 
+ * A debounced function to update token data (location, occupied sub-scene). 
  * Debounced 1 second because the user could be making multiple movements in succession.
  * @param {object} tokenArr An array of Foundry Token instances
  */
 const debounceTokenUpdate = foundry.utils.debounce( (tokenArr) => {
     for (const {token, loc, uuid} of tokenArr) {
-        ssc.updateTokenFlags(token, loc, uuid);
+        ssc.updateTokenFlags(token.document, loc, uuid);
     }
 }, 1000);
 
@@ -77,82 +78,70 @@ export async function tokenDragDrop(event) {
 
     const updatedTokenArr = [];
 
-    if ( !isUpdated ) {
-        // Move tokens
-        for (const update of updates) {
-            const tok = ssc.getToken(update._id);
-            tok.document.updateSource({
-                x: update.x,
-                y: update.y
-            })
-            // Animate token movement.  See Foundry.js, line 46650
-            tok.animate(update);
+    // Move tokens
+    const promises = [];
+    for (const update of updates) {
+        const tokDoc = ssc.getToken(update._id);
+        tokDoc.updateSource({
+            x: update.x,
+            y: update.y
+        })
+        const tok = canvas.tokens.placeables.filter(t => t.document === tokDoc).pop();
+        // Animate token movement.  See Foundry.js, line 46650
+        promises.push(tok.animate(update));
 
-            const currSubScene = ssc.getSubSceneTile(ssc.activeSceneUUID);
-            updatedTokenArr.push({
-                token: tok,
-                loc: {x: update.x - currSubScene.x, y: update.y - currSubScene.y},
-                uuid: currSubScene.compendiumSubSceneUUID
-            })
-        }
-        // Debounce the update of token flags with new loc (and new sub-scene if necessary) for updatedTokenArr
-        debounceTokenUpdate(updatedTokenArr);
-        return;
+        const currSubScene = ssc.getSubSceneTileDoc(ssc.activeSceneUUID);
+        updatedTokenArr.push({
+            token: tok,
+            loc: {x: update.x - currSubScene.x, y: update.y - currSubScene.y},
+            uuid: currSubScene.compendiumSubSceneUUID
+        })
     }
+    await Promise.all(promises);
+    // Debounce the update of token flags with new loc (and new sub-scene if necessary) for updatedTokenArr
+    debounceTokenUpdate(updatedTokenArr);
+
+    if ( !isUpdated ) return;
 
     /****************************** */
-    /* The active scene changes.    */
+    /* The active sub-scene changes.*/
     /****************************** */
-
-    // What are the sub-scenes that will be added?
-    const scenesToAdd = subScenesToAdd(updates[0].destinationSubScene.compendiumSubSceneUUID)
-    // What are the sub-scenes that need to be removed?
-    const scenesToRemove = subScenesToRemove(updates[0].destinationSubScene.compendiumSubSceneUUID);
-    // Remove sub-scenes that are now grandchildren
-    removeSubScenes(scenesToRemove, updates[0].destinationSubScene.compendiumSubSceneUUID);
 
     // Save the viewport location of the soon to be active sub-scene.  To be used to generate a vector
-    const tile = ssc.getSubSceneTile(updates[0].destinationSubScene.compendiumSubSceneUUID);
+    const tile = ssc.getSubSceneTileDoc(updates[0].destinationSubScene.document.compendiumSubSceneUUID);
     const oldLoc = {
         x: tile.x,
         y: tile.y
     }
 
-    // Redraw the viewport with the new sub-scene as the active scene
-    await populateScene(updates[0].destinationSubScene.compendiumSubSceneUUID, {isParent : true});
+    // Remove all sub-scenes and all placeables.
+    Viewport.removeAllSubScenes();
 
+    // Redraw the viewport with the new sub-scene as the active scene
+    await Viewport.populateScene(updates[0].destinationSubScene.document.compendiumSubSceneUUID, {isParent : true});
+
+    const viewportSubScenesUUIDs = [ssc.activeSceneUUID, ...ssc.ActiveChildrenUUIDs]
+    await Viewport.populatePlaceables(viewportSubScenesUUIDs);
+
+    // Calculate a vector.
+    // tile will be updated with a new location  
     const vector = {
         x: tile.x - oldLoc.x,
         y: tile.y - oldLoc.y
     }
 
     // Pan the scene by the vector to maintain viewport orientation relative to the new activeScene
+    // Will make it look like eveything in the viewport stayed in position, but the frame moved/resized.
     canvas.stage.pivot.set(canvas.stage.pivot.x + vector.x, canvas.stage.pivot.y + vector.y);
 
-    // Update the location of all the remaining placeables in the scene by the vector!
-    updatePlaceablesLoc(vector);
+    // Update everything.
+    canvas.perception.update({refreshLighting: true, refreshTiles: true}, true);
 
-    // Add missing placeables
-    await populatePlaceables(scenesToAdd);
-
-    // Move tokens
-    for (const update of updates) {
-        const tok = ssc.getToken(update._id);
-        await tok.setPosition(update.x + vector.x, update.y + vector.y);
-        tok.x = tok.document.x = update.x + vector.x;
-        tok.y = tok.document.y = update.y + vector.y;
-        const currSubScene = ssc.getSubSceneTile(ssc.activeSceneUUID);
-        updatedTokenArr.push({
-            token: tok,
-            loc: {x: update.x + vector.x - currSubScene.x, y: update.y + vector.y - currSubScene.y},
-            uuid: currSubScene.compendiumSubSceneUUID
-        })
-    }
     // Debounce the update of token flags with new loc (and new sub-scene if necessary) for updatedTokenArr
     debounceTokenUpdate(updatedTokenArr);
 
-    // Cache the textures for all the grandchildren
-    debounceGrandChildCache(ssc.ActiveChildrenUUIDs);
+    // Cache everything needed for all the new grandchildren
+    SSCache.debounceGrandChildCache(ssc.ActiveChildrenUUIDs);
 }
 
 /**
@@ -194,7 +183,6 @@ export function tokenCreate(doc, data, options, userId) {
 
     // Update the token flags with the required data.
     doc.updateSource({
-        _id : foundry.utils.randomID(16),
         [`flags.${ModuleName}.${ssc.tokenFlags[0]}`] : finalSubScene.compendiumSubSceneUUID,
         [`flags.${ModuleName}.${ssc.tokenFlags[1]}`] : {x: data.x - finalSubScene.x, y: data.y - finalSubScene.y}
     });
@@ -204,9 +192,10 @@ export function tokenCreate(doc, data, options, userId) {
     
     // Create token placeable
     const tok = new ScrollerToken(doc);
+    tok.parentUUID = [];
     doc._object = tok;
-    // Cache the token
-    ssc.cacheToken(tok);
+    // Cache the token Document
+    ssc.cacheToken(doc);
     // Add the token to the scene
     canvas.tokens.objects.addChild(tok);
 

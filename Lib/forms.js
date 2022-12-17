@@ -122,7 +122,11 @@ export class ScrollerInitiateScene extends FormApplication {
 
     // This gets all the tokens the user has permissions to at least view.
     // We also don't want tokens that are already being controlled in this list.
-    const viewableTokens = ssc.getAllTokens.filter(t => t.observer === true).filter(t => t.controlled === false);
+    const viewableTokenDocuments = ssc.getAllTokenDocs;
+    const viewableTokens = canvas.tokens.placeables
+                            .filter(t => viewableTokenDocuments.includes(t.document))
+                            .filter(t => t.observer === true)
+                            .filter(t => t.controlled === false);
 
 
     // Send list tokens to the template
