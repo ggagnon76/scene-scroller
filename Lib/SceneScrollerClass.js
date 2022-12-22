@@ -1,6 +1,7 @@
 import { ModuleName, ssc } from "../ss-initialize.js";
 import * as Viewport from "./ViewportClass.js";
-import { ScrollerToken } from "./TokenClass.js";
+import { ScrollerTokenDocument } from "./TokenClass.js";
+import { log } from "./functions.js";
 
 /**
  * A class that will be publicly available containing a schema for
@@ -77,6 +78,7 @@ export class SceneScroller_Cache {
      */
     cacheactiveSceneUUID(uuid) {
         this.viewport[this.viewportFlags[2]] = uuid;
+        log(false, `Active sub-scene has been set in cache via: ${uuid}`);
     }
 
     /**
@@ -86,6 +88,7 @@ export class SceneScroller_Cache {
     async setActiveToken(tokenID) {
         this.viewport[this.viewportFlags[1]] = tokenID;
         await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], tokenID);
+        log(false, `Token ${tokenID} has been set as active in cache and scene flags.`)
     }
 
     /**
@@ -106,7 +109,7 @@ export class SceneScroller_Cache {
 
     /**
      * Get a Tile Document from the cache
-     * @param {string} id The tile.ID
+     * @param {string} id The tile.ss_id or the UUID
      * @returns {object}    A foundry Tile Document.
      */
     getSubSceneTileDoc(id) {
@@ -115,16 +118,17 @@ export class SceneScroller_Cache {
 
     /**
      * Save a tile document to the cache
-     * @param {string} id the tile.ID
+     * @param {string} ss_id the tile.ss_id
      * @param {object} tileDoc A foundry Tile Document
      */
-    setSubSceneCache(id, tileDoc) {
-        this.subScenes.set(id, tileDoc);
+    setSubSceneCache(ss_id, tileDoc) {
+        this.subScenes.set(ss_id, tileDoc);
+        log(false, `Sub-scene with ss_id ${ss_id} has been cached.`);
     }
 
     /** 
      * Check if the cache contains a tile document
-     * @param {string}  id  The tile.ID or the UUID
+     * @param {string}  id  The tile.ss_id or the UUID
      * @returns {boolean}   True if it does, false otherwise
      */
     hasSubSceneInCache(id) {
@@ -144,11 +148,7 @@ export class SceneScroller_Cache {
      */
     get ActiveChildrenUUIDs() {
         const activeSubSceneUuid = this.subScenes.get(this.activeSceneUUID).compendiumSubSceneUUID;
-        const activeSubSceneSource = this.compendiumSources.get(activeSubSceneUuid);
-        const subSceneFlagsArr =  activeSubSceneSource.getFlag("scene-scroller-maker", this.compendiumFlags[0]);
-        return subSceneFlagsArr.map(s => {
-            return s[this.subSceneChildrenFlags[0]];
-        })
+        return ssc.childrenUuids(activeSubSceneUuid);
     }
 
     /**
@@ -157,21 +157,29 @@ export class SceneScroller_Cache {
      * @returns {array<string>}     An array of UUID strings
      */
     childrenUuids(uuid) {
-        const activeSubSceneSource = this.compendiumSources.get(uuid);
-        const subSceneFlagsArr =  activeSubSceneSource.getFlag("scene-scroller-maker", this.compendiumFlags[0]);
+        const subSceneFlagsArr = ssc.childrenFlags(uuid);
         return subSceneFlagsArr.map(s => {
             return s[this.subSceneChildrenFlags[0]];
         })
     }
 
     /**
-     * A getter that returns...
+     * A getter that returns the flags data for the children of the active scene
      * @returns {object}
      */
     get ActiveChildrenFlags() {
         const activeSubSceneUuid = this.subScenes.get(this.activeSceneUUID).compendiumSubSceneUUID;
-        const activeSubSceneSource = this.compendiumSources.get(activeSubSceneUuid);
-        return activeSubSceneSource.getFlag("scene-scroller-maker", this.compendiumFlags[0]) 
+        return ssc.childrenFlags(activeSubSceneUuid); 
+    }
+
+    /**
+     * A function that returns an object of flag data for a specific scene
+     * @param {string} uuid The UUID of the sub-sche from which we want the children flag data
+     * @returns {object} The object containing flag data    
+     */
+    childrenFlags(uuid) {
+        const activeSubSceneSource = this.compendiumSources.get(uuid);
+        return  activeSubSceneSource.getFlag("scene-scroller-maker", this.compendiumFlags[0]);
     }
     
     /*************************************************************************************/
@@ -179,20 +187,28 @@ export class SceneScroller_Cache {
     /*************************************************************************************/
 
     /**
-     * Add a Token to the cache.
+     * Add a Token to the cache.  Must only be one entry per token.
      * If user is GM, then token is added to an array of Tokens present in the scene, as flags to the scene
      * If user is GM, then flag added to scene setting this Token as the active token.
      * @param {object} tokenDoc A Foundry Token Document
      */
-    async cacheToken(tokenDoc) {
+    cacheToken(tokenDoc) {
         this.tokens.set(tokenDoc.ss_id, tokenDoc);
+        log(false, `Token with ss_id ${tokenDoc.ss_id} has been added to cache.`);
+
         if ( game.user.isGM ) {
             const data = tokenDoc.toObject();
             data.ss_id = tokenDoc.ss_id;
-            const currArr = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]) || [];
-            currArr.push(JSON.stringify(data));
-            await canvas.scene.setFlag(ModuleName, this.viewportFlags[0], currArr);
-            await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], tokenDoc.ss_id);
+            let currArrJSON = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]) || [];
+            let currArr = currArrJSON.map(j => JSON.parse(j));
+            const currMap = new Map();
+            for (const t of currArr) {
+                currMap.set(t.ss_id, t);
+            }
+            currMap.set(data.ss_id, data);
+            currArr = [...currMap.values()];
+            currArrJSON = currArr.map(j => JSON.stringify(j));
+            debounceCacheToken(currArrJSON, tokenDoc);
         }
     }
 
@@ -221,7 +237,8 @@ export class SceneScroller_Cache {
      * @param {object} token A Foundry Token Document
      */
     async deleteToken(tokenDoc) {
-        this.tokens.delete(tokenDoc.id);
+        this.tokens.delete(tokenDoc.ss_id);
+        log(false, `Token with ss_id ${tokenDoc.ss_id} has been deleted from cache.`);
         if ( game.user.isGM ) {
             const currArr = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]) || [];
             const newArr = currArr.filter(t => !t.includes(JSON.stringify(tokenDoc.id)));
@@ -231,6 +248,7 @@ export class SceneScroller_Cache {
             if ( currTokID === tokenDoc.id ) {
                 const newCurr = newArr[0]?.id || "";
                 await canvas.scene.setFlag(ModuleName, this.viewportFlags[1], newCurr);
+                log(false, `Token with ss_id ${tokenDoc.ss_id} has been deleted from scene flags.`);
             }
         }
     }
@@ -243,7 +261,6 @@ export class SceneScroller_Cache {
      */
     async updateTokenFlags(tokenDoc, loc, uuid = null) {
 
-        // Tokens are local memory only.  Not in db.  Can't use setFlag
         tokenDoc.updateSource({
             [`flags.${ModuleName}.${ssc.tokenFlags[1]}`] : {x: loc.x, y: loc.y}
         });
@@ -254,6 +271,8 @@ export class SceneScroller_Cache {
             });
         }
         await this.cacheToken(tokenDoc);
+        log(false, `Token with ss_id ${tokenDoc.ss_id} has had its location updated and saved in cache.`)
+
     }
 
     /**
@@ -292,6 +311,7 @@ export class SceneScroller_Cache {
             wallDoc.parentUUID.push(otherParentUUID);
             this.walls.set(wallDoc.id, wallDoc);
         } else this.walls.set(wallDoc.id, wallDoc);
+        log(false, `Wall with id ${wallDoc.id} has been added to cache.`);
     }
 
     /**
@@ -304,6 +324,7 @@ export class SceneScroller_Cache {
             const filtered = wallDoc.parentSubScene.filter(w => w.parentSubScene !== id);
             wallDoc.parentSubScene = filtered;
         } else this.walls.delete(wallDoc.id);
+        log(false, `Wall with id ${wallDoc.id} has been deleted from cache.`);
     }
 
     /**
@@ -312,6 +333,7 @@ export class SceneScroller_Cache {
      */
     addLight(lightDoc) {
         this.lights.set(lightDoc.id, lightDoc);
+        log(false, `Light with id ${lightDoc.id} has been added to cache.`);
     }
 
     /**
@@ -320,6 +342,7 @@ export class SceneScroller_Cache {
      */
     removeLight(lightDoc) {
         this.lights.delete(lightDoc.id);
+        log(false, `Light with id ${lightDoc.id} has been deleted from cache.`);
     }
 
     /**
@@ -328,6 +351,7 @@ export class SceneScroller_Cache {
      */
     addNote(noteDoc) {
         this.notes.set(noteDoc.id, noteDoc);
+        log(false, `Note with id ${noteDoc.id} has been added to cache.`);
     }
 
     /**
@@ -336,6 +360,7 @@ export class SceneScroller_Cache {
      */
     removeNote(noteDoc) {
         this.notes.delete(noteDoc.id);
+        log(false, `Note with id ${noteDoc.id} has been deleted from cache.`);
     }
 
     /**
@@ -344,6 +369,7 @@ export class SceneScroller_Cache {
      */
     addSound(soundDoc) {
         this.sounds.set(soundDoc.id, soundDoc);
+        log(false, `Sound with id ${soundDoc.id} has been added to cache.`);
     }
 
     /**
@@ -352,6 +378,7 @@ export class SceneScroller_Cache {
      */
     removeSound(soundDoc) {
         this.sounds.delete(soundDoc.id);
+        log(false, `Sound with id ${soundDoc.id} has been deleted from cache.`);
     }
 
     /**
@@ -360,6 +387,7 @@ export class SceneScroller_Cache {
      */
     addTemplate(templateDoc) {
         this.templates.set(templateDoc.id, templateDoc);
+        log(false, `Template with id ${templateDoc.id} has been added to cache.`);
     }
 
     /**
@@ -368,6 +396,7 @@ export class SceneScroller_Cache {
      */
     removeTemplate(templateDoc) {
         this.templates.delete(templateDoc.id);
+        log(false, `Template with id ${templateDoc.id} has been removed from cache.`);
     }
 
     /**
@@ -376,6 +405,7 @@ export class SceneScroller_Cache {
      */
     addTile(tileDoc) {
         this.tiles.set(tileDoc.id, tileDoc);
+        log(false, `Tile with id ${tileDoc.id} has been added to cache.`);
     }
 
     /**
@@ -384,6 +414,7 @@ export class SceneScroller_Cache {
      */
     removeTile(tileDoc) {
         this.tiles.delete(tileDoc.id);
+        log(false, `Tile with id ${tileDoc.id} has been removed from cache.`);
     }
 
     /**
@@ -392,6 +423,7 @@ export class SceneScroller_Cache {
      */
     addDrawing(drawingDoc) {
         this.drawings.set(drawingDoc.id, drawingDoc);
+        log(false, `Drawing with id ${drawingDoc.id} has been added to cache.`);
     }
 
     /**
@@ -400,6 +432,7 @@ export class SceneScroller_Cache {
      */
     removeDrawing(drawingDoc) {
         this.drawings.delete(drawingDoc.id);
+        log(false, `Drawing with id ${drawingDoc.id} has been removed from cache.`);
     }
 
     /*************************************************************************************/
@@ -413,6 +446,7 @@ export class SceneScroller_Cache {
      */
     cacheCompendiumSource(uuid, source) {
         this.compendiumSources.set(uuid, source);
+        log(false, `Compendium source scene with uuid ${uuid} has been added to cache.`);
     }
 
     /**
@@ -430,6 +464,8 @@ export class SceneScroller_Cache {
      */
     removeCompendiumSource(uuid) {
         this.compendiumSources.delete(uuid);
+        log(false, `Compendium source scene with uuid ${uuid} has been removed from cache.`);
+
     }
 
     /*************************************************************************************/
@@ -439,6 +475,8 @@ export class SceneScroller_Cache {
 
     cacheSubSceneSprite(id, sprite) {
         this.sprites.set(id, sprite);
+        log(false, `Texture with id ${id} has been added to cache.`);
+
     }
 
     spriteFromCache(uuid) {
@@ -453,6 +491,7 @@ export class SceneScroller_Cache {
      * Populates a SceneScroller_Cache instance with data on creation.
      */
     async _initialize() {
+        log(false, "Executing __ _initialize()__ function from cache class instantiation.");
         for (const k of this.viewportFlags) {
             this.viewport[k] = canvas.scene.getFlag(ModuleName, k)
         }
@@ -460,15 +499,13 @@ export class SceneScroller_Cache {
         // Create full tokens from stored tokenData.
         if ( !Viewport.isScrollerScene() ) return;
         const tokArray = canvas.scene.getFlag(ModuleName, this.viewportFlags[0]);
+        if ( !tokArray ) return;
         for (const tok of tokArray) {
             const data = JSON.parse(tok);
             // Creating a new TokenDocument will mutate data and scrub out custom data
             const ssId = data.ss_id;
-            const doc = new CONFIG.Token.documentClass(data, {parent: canvas.scene});
-            //const token = new ScrollerToken(doc);
+            const doc = new ScrollerTokenDocument(data, {parent: canvas.scene});
             doc.ss_id = ssId;
-            //doc._object = token
-            //token.parentUUID = [];
             this.tokens.set(doc.ss_id, doc);
         }
 
@@ -476,6 +513,11 @@ export class SceneScroller_Cache {
         const activeTokenID = canvas.scene.getFlag(ModuleName, this.viewportFlags[1]);
         const activeToken = this.tokens.get(activeTokenID);
         const activeTokenScene = activeToken.getFlag(ModuleName, this.tokenFlags[0]);
+        if ( !activeTokenScene ) {
+            log(false, "Token active scene wasn't properly saved in scene flags.  Clear Scene Scroller flags.");
+            ui.notifications.warn("Token active scene wasn't properly saved in scene flags.  Clear Scene Scroller flags and re-initialize.");
+            return;
+        }
         this.cacheactiveSceneUUID(activeTokenScene);
     }
 }
@@ -484,49 +526,41 @@ export class SceneScroller_Cache {
      * Queries a scene in a compendium to copy all placeables into the cache.
      * All copied placeables reference the parent Tile/Scene
      * @param {object} scene An compendium scene
-     * @param {object} tile A Foundry Tile instance
+     * @param {object} tileDoc A Foundry Tile Document
      */
-export function cacheInScenePlaceables(scene, tile) {
+export function cacheInScenePlaceables(scene, tileDoc) {
     const placeables = ["drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens", "walls"];
     const pDict = {
         drawings: {
             doc : (data) => new DrawingDocument(data, {parent: canvas.scene}),
-            //p: (doc) => new Drawing(doc),
             cache: (d) => ssc.addDrawing(d)
         },
         lights : {
             doc : (data) => new AmbientLightDocument(data, {parent: canvas.scene}),
-            //p: (doc) => new AmbientLight(doc),
             cache: (l) => ssc.addLight(l)
         },
         notes : {
             doc : (data) => new NoteDocument(data, {parent: canvas.scene}),
-            //p: (doc) => new Note(doc),
             cache: (n) => ssc.addNote(n)
         },
         sounds: {
             doc : (data) => new AmbientSoundDocument(data, {parent: canvas.scene}),
-            //p: (doc) => new AmbientSound(doc),
             cache: (s) => ssc.addSound(s)
         },
         templates: {
             doc : (data) => new MeasuredTemplateDocument(data, {parent: canvas.scene}),
-            //p: (doc) => new MeasuredTemplate(doc),
             cache: (t) => ssc.addTemplate(t)
         },
         tiles: {
             doc: (data) => new TileDocument(data, {parent: canvas.scene}),
-            //p: (doc) => {return doc.object},
             cache: (t) => ssc.addTile(t)
         },
         tokens: {
-            doc: (data) => new TokenDocument(data, {parent: canvas.scene}),
-            //p: (doc) => new Token(doc),
+            doc: (data) => new ScrollerTokenDocument(data, {parent: canvas.scene}),
             cache: (t) => ssc.cacheToken(t)
         },
         walls: {
             doc: (data) => new WallDocument(data, {parent: canvas.scene}),
-            //p: (doc) => new Wall(doc),
             cache: (w) => ssc.addWall(w)
         }
     }
@@ -535,8 +569,7 @@ export function cacheInScenePlaceables(scene, tile) {
         scene[placeable].forEach(p=> {
             const data = p.toObject();
             const doc = pDict[placeable].doc(data);
-            //const e = pDict[placeable].p(doc);
-            doc.parentSubScene = [tile.id];
+            doc.parentSubScene = [tileDoc.ss_id];
             doc.parentUUID = [scene.compendiumUUID];
             pDict[placeable].cache(doc);
         })
@@ -547,6 +580,7 @@ export function cacheInScenePlaceables(scene, tile) {
  * @param {string|array.<string>}   uuids   The array of uuid strings
  */
 export async function cacheSubScene(uuids) {
+    log(false, "Caching Sub-Scenes from uuid's");
     if ( !Array.isArray(uuids) ) uuids = [uuids];
 
     for (const uuid of uuids) {
@@ -581,11 +615,12 @@ export async function cacheSubScene(uuids) {
             }
             const tileDoc = new TileDocument(data, {parent: canvas.scene});
             tileDoc.compendiumSubSceneUUID = uuid;
+            tileDoc.ss_id = foundry.utils.randomID(16);
             const sourcePath = source.getFlag("scene-scroller-maker", ssc.compendiumFlags[3]);
             tileDoc.imagePath = PolygonMesher.getClipperPathFromPoints(sourcePath);
 
             // Save this tile in the cache referencing both tile.id and the scene uuid, for convenience
-            ssc.setSubSceneCache(tileDoc.id, tileDoc);
+            ssc.setSubSceneCache(tileDoc.ss_id, tileDoc);
             ssc.setSubSceneCache(uuid, tileDoc);
         }
 
@@ -596,6 +631,7 @@ export async function cacheSubScene(uuids) {
 }
 
 export const debounceGrandChildCache = foundry.utils.debounce( async (uuidArr) => {
+    log(false, "Caching grandchildren scenes.");
     const missingGrandChildren = new Set();
     for (const childUuid of uuidArr) {
         const childSource = await fromUuid(childUuid);
@@ -608,4 +644,15 @@ export const debounceGrandChildCache = foundry.utils.debounce( async (uuidArr) =
         })
     }
     cacheSubScene([...missingGrandChildren]);
+}, 1000);
+
+/**
+ * A debounced function to update token data (location, occupied sub-scene). 
+ * Debounced 1 second because the user could be making multiple movements in succession.
+ * @param {object} tokenArr An array of Foundry Token instances
+ */
+const debounceCacheToken = foundry.utils.debounce( async (currArr, tokenDoc) => {
+    log(false, `Saving location and occupied sub-scene of token with ss_id ${tokenDoc.ss_id} into Scene flags`);
+    await canvas.scene.setFlag(ModuleName, ssc.viewportFlags[0], currArr);
+    await canvas.scene.setFlag(ModuleName, ssc.viewportFlags[1], tokenDoc.ss_id);
 }, 1000);

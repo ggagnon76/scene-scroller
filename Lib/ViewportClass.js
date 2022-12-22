@@ -26,6 +26,7 @@ export function isScrollerScene(scene = canvas.scene) {
  */
 export async function initialize() {
     if ( !game.user.isGM ) return;
+    log(false, "Executing __initialize()__ function.  (From API)");
 
     game.socket.on(SocketModuleName, message_handler);
     game.modules.get(ModuleName).struct = SSCache.SCSC_Flag_Schema;
@@ -70,7 +71,7 @@ export async function initialize() {
 export async function onReady(uuid = null) {
 
     if ( !isScrollerScene() && uuid === null ) return;
-    log(false, "Executing 'onReady()' function.");
+    log(false, "Executing __onReady()__ function.");
 
     if ( uuid !== null ) {
         ssc.cacheactiveSceneUUID(uuid);
@@ -115,6 +116,7 @@ export async function onReady(uuid = null) {
  * @param {object} area {width: <number>, height: <number>}
  */
 export async function localResizeScene(area) {
+    log(false, "Executing __localResizeScene()__ function.");
 
     canvas.primary.removeChildren();
 
@@ -145,6 +147,10 @@ export async function localResizeScene(area) {
 
     foundry.utils.mergeObject(canvas.dimensions, data);
     canvas.scene.dimensions = canvas.dimensions;
+    canvas.scene.updateSource({
+        height: canvas.dimensions.height,
+        width: canvas.dimensions.width
+    }) 
 
     canvas.walls._draw();
 
@@ -198,6 +204,7 @@ export async function localResizeScene(area) {
  * Only used when setting a new sub-scene which doesn't have tokens
  */
 export function sceneCenterScaleToFit() {
+    log(false, "Executing __sceneCenterScaleToFit()__ function.");
     const pad = 75;
     const sidebarPad = $("#sidebar").width() + pad;
     const d = canvas.dimensions;
@@ -225,6 +232,7 @@ export function sceneCenterScaleToFit() {
  * @returns 
  */
 export function locInSubScenes(loc) {
+    log(false, "Executing __locInSubScenes()__ function.");
     const subSceneArray = [];
     const viewportSubScenesUUIDs = [ssc.activeSceneUUID, ...ssc.ActiveChildrenUUIDs]
     for (const sceneUUID of viewportSubScenesUUIDs) {
@@ -244,11 +252,12 @@ export function locInSubScenes(loc) {
     return subSceneArray;
 }
 
-function initializeTile(tileDoc) {
+async function initializeTile(tileDoc) {
+    log(false, "Executing __initializeTile()__ function.");
 
     const tile = new Tile(tileDoc);
-    canvas.scene.collections.tiles.set(tileDoc.id, tileDoc)
-    tile.draw();
+    canvas.scene.collections.tiles.set(tileDoc.ss_id, tileDoc)
+    await tile.draw();
 }
 
 /**
@@ -256,13 +265,12 @@ function initializeTile(tileDoc) {
  * @param {string} uuid A compendium scene UUID
  */
 export async function populateScene(uuid, {isParent = false}={}) {
+    log(false, "Executing __populateScene()__ function.");
 
     const subScene = ssc.getSubSceneTileDoc(uuid);
     const d = canvas.dimensions;
 
     // The cached subScene is unaware of the current scene size or padding
-    // If we're updating the scene, the current location may be incorrect too.
-    // TO INVESTIGATE:  Using subScene.updateSource() here doesn't work?
     if ( isParent ) {
         const activeSceneSource = ssc.compendiumSourceFromCache(uuid);
         const activeSceneLoc = activeSceneSource.getFlag("scene-scroller-maker", ssc.compendiumFlags[2]);
@@ -285,7 +293,7 @@ export async function populateScene(uuid, {isParent = false}={}) {
         })
     }
 
-    initializeTile(subScene);
+    await initializeTile(subScene);
 
     // populate child sub-scenes
     if ( isParent ) { 
@@ -300,6 +308,7 @@ export async function populateScene(uuid, {isParent = false}={}) {
  * @param {array<string>}   uuids   An array of UUID strings.  Only placeables belonging to those UUID's get populated.
  */
 export async function populatePlaceables(uuids) {
+    log(false, "Executing __populatePlaceables()__ function.");
     const placeables = ["walls", "drawings", "lights", "notes", "sounds", "templates", "tiles", "tokens"];
 
     // Filter function that finds placeables that belong to a parent compendium scene
@@ -350,6 +359,7 @@ export async function populatePlaceables(uuids) {
                     })
                     if ( canvas.walls.placeables.filter(w => w.id === doc.id).length >= 1 ) continue;
                     canvasObj = new Wall(doc);
+                    log(false, "New wall.");
                     break;
                 case "drawings":
                     doc.updateSource({
@@ -357,6 +367,7 @@ export async function populatePlaceables(uuids) {
                         y: sourcePlaceable.y + subScene.y
                     })
                     canvasObj = new Drawing(doc);
+                    log(false, "new drawing.");
                     break;
                 case "lights":
                     doc.updateSource({
@@ -368,6 +379,7 @@ export async function populatePlaceables(uuids) {
                         y: sourcePlaceable.y + subScene.y
                     })
                     canvasObj = new AmbientLight(doc);
+                    log(false, "New light");
                     break;
                 case "notes":
                     doc.updateSource({
@@ -375,12 +387,14 @@ export async function populatePlaceables(uuids) {
                         y: sourcePlaceable.y + subScene.y
                     })
                     canvasObj = new Note(doc);
+                    log(false, "New note");
                     break;
                 case "sounds":
                     doc.updateSource({
                         radius: sourcePlaceable.radius
                     })
                     canvasObj = new AmbientSound(doc);
+                    log(false, "New sound");
                     break;
                 case "templates":
                     doc.updateSource({
@@ -388,6 +402,7 @@ export async function populatePlaceables(uuids) {
                         y: sourcePlaceable.y + subScene.y
                     })
                     canvasObj = new MeasuredTemplate(doc);
+                    log(false, "New template");
                     break;
                 case "tiles":
                     canvasObj = new Tile(doc);
@@ -396,6 +411,7 @@ export async function populatePlaceables(uuids) {
                         x: sourcePlaceable.x + subScene.x,
                         y: sourcePlaceable.y + subScene.y
                     })
+                    log(false, "New tile");
                     break;
                 case "tokens" : 
                     const tokenLoc = doc.getFlag(ModuleName, ssc.tokenFlags[1]);
@@ -405,6 +421,7 @@ export async function populatePlaceables(uuids) {
                     })
                     canvasObj = new SSToken.ScrollerToken(doc);
                     doc._object = canvasObj;
+                    log(false, "New token");
                     break;
             }
 
@@ -415,7 +432,15 @@ export async function populatePlaceables(uuids) {
         }
     }
     canvas.walls._deactivate();
-    canvas.perception.update({refreshLighting: true, refreshVision: true}, true);
+    canvas.perception.update({
+        refreshTiles: true,
+        refreshLightSources: true,
+        refreshVisionSources: true,
+        refreshPrimary: true,
+        refreshLighting: true, 
+        refreshVision: true,
+        refreshSounds: true
+    },true);
 }
 
 /**
@@ -423,6 +448,7 @@ export async function populatePlaceables(uuids) {
  * @param {object} placeable A Foundry instance for any given placeable.
  */
 export async function placeableDraw(placeable) {
+    log(false, "Executing __placeableDraw()__ function.");
     await placeable.draw();
 
     // Have to update the wall vertices.  Wall.#initializeVertices() is private.  So run Wall._onUpdate().
@@ -455,6 +481,7 @@ export async function placeableDraw(placeable) {
     }
 
     placeable.mouseInteractionManager.callbacks.dragLeftDrop = placeableDragDrop;
+    log(false, "Completed __placeableDraw()__ function.");
 }
 
 /**
@@ -462,6 +489,7 @@ export async function placeableDraw(placeable) {
  * @param {object} event HTML event
  */
 function _handleDragDrop(event) {
+    log(false, "Executing __handleDragDrop()__ function.");
     ui.notifications.info("Resizing not implemented yet.");
 }
 
@@ -470,6 +498,7 @@ function _handleDragDrop(event) {
  * @param {object} event HTML event
  */
 function _placeableDragDrop(event) {
+    log(false, "Executing __ _placeableDragDrop()__ function.");
 
     if ( this._dragHandle ) {
         const handleDragDrop = _handleDragDrop.bind(this);
@@ -502,6 +531,7 @@ function _placeableDragDrop(event) {
  * @param {object} p A Foundry Wall instance
  */
 async function drawDoorControl(p) {
+    log(false, "Executing __drawDoorControl()__ function.");
     if ( !p.doorControl ) p.doorControl = p.createDoorControl();
     p.doorControl.draw();
 
@@ -518,6 +548,7 @@ async function drawDoorControl(p) {
  * @param {object} event HTML event
  */
 function _doorControlLeftClick(event) {
+    log(false, "Executing __ _doorControlLeftClick()__ function.");
     /** Copied from DoorControls#_onMouseDown(), line 31545 */
     if ( event.data.originalEvent.button !== 0 ) return; // Only support standard left-click
     event.stopPropagation();
@@ -559,6 +590,7 @@ function _doorControlLeftClick(event) {
  * @returns 
  */
 function _doorControlRightClick(event) {
+    log(false, "Executing __ _doorControlRightClick()__ function.");
     /** Copied from DoorControls#_onRightDown(), line 31575 */
     event.stopPropagation();
     if ( !game.user.isGM ) return;
@@ -576,6 +608,7 @@ function _doorControlRightClick(event) {
  * @param {object}  updates Array of update objects generated by core_onDragLeftDrop()
  */
 export function determineDestination(updates) {
+    log(false, "Executing __determineDestination()__ function.");
     for (let update of updates) {
 
         // Determine if the token landed in a new sub-scene, then add update details to updatedTokenArr
@@ -602,6 +635,7 @@ export function determineDestination(updates) {
  * @returns {boolean}   returns True if an update is required.
  */
 export function parentSceneNeedsUpdate(updates) {
+    log(false, "Executing __parentSceneNeedsUpdate()__ function.");
     const currSubSceneUuid = ssc.activeSceneUUID;
     for (const update of updates) {
         if ( update.destinationSubScene.document.compendiumSubSceneUUID === currSubSceneUuid ) return false
@@ -610,16 +644,26 @@ export function parentSceneNeedsUpdate(updates) {
 }
 
 export function removeAllSubScenes() {
+    log(false, "Executing __removeAllSubScenes()__ function.");
     canvas.primary.tiles.clear();
     canvas.scene.collections.tiles.clear();
     removeAllPlaceables();
 }
 
 function removeAllPlaceables() {
+    log(false, "Executing __removeAllPlaceables()__ function.");
 
     const doors = canvas.walls.placeables.filter(w => {if (w.doorControl) return true;});
     for (const door of doors) {
         door.doorControl.destroy({children: true});
+    }
+
+    canvas.tokens.controlledObjects.clear();
+
+    for (const tok of canvas.tokens.placeables) {
+        tok.bars.removeChildren();
+        tok.nameplate.removeChildren();
+        tok._destroy();
     }
 
     const placeables = ["walls", "drawings", "lighting", "notes", "sounds", "templates", "tiles", "tokens"];
@@ -634,10 +678,12 @@ function removeAllPlaceables() {
     }
 
     canvas.primary.tokens.clear();
+    canvas.grid.borders.removeChildren();
 
 }
 
 export async function updateViewport(newUUID) {
+    log(false, "Executing __updateViewport()__ function.");
 
     const toCache = subScenesToAdd(newUUID);
     for (const uuid of toCache) {

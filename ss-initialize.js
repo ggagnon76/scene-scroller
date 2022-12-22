@@ -25,7 +25,6 @@ Hooks.once('ready', () => {
 
 // Ref: Foundryvtt-devMode module.
 Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
-    log(false, "Registering 'devModeReady' flag.");
     registerPackageDebugFlag(ModuleName);
 });
 
@@ -37,7 +36,9 @@ Hooks.on('updateScene', (scene, data, options, id) => {
 
 Hooks.on('canvasReady', () => {
     if ( Viewport.isScrollerScene() ) {
+        log(false, "CanvasReady hook: Scene has Scene Scroller Flags.")
         ssc = new SceneScroller_Cache;
+        if ( !ssc.activeSceneUUID ) return;
         Viewport.onReady();
     }
 });

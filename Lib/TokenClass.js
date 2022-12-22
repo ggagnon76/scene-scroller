@@ -2,25 +2,31 @@ import { ModuleName, ssc } from "../ss-initialize.js";
 import * as Viewport from "./ViewportClass.js";
 import * as Forms from "./forms.js";
 import * as SSCache from "./SceneScrollerClass.js";
+import { log } from "./functions.js";
 
-// Override Token methods to replace ._id with .ss_id
-export class ScrollerToken extends CONFIG.Token.objectClass {
-
+// Override TokenDocument method to replace .id getter with .ss_id
+export class ScrollerTokenDocument extends CONFIG.Token.documentClass {
+    
     get id() {
-        return this.document.ss_id;
+        return this.ss_id;
     }
 }
 
-/**
- * A debounced function to update token data (location, occupied sub-scene). 
- * Debounced 1 second because the user could be making multiple movements in succession.
- * @param {object} tokenArr An array of Foundry Token instances
- */
-const debounceTokenUpdate = foundry.utils.debounce( (tokenArr) => {
-    for (const {token, loc, uuid} of tokenArr) {
-        ssc.updateTokenFlags(token.document, loc, uuid);
+// Override Token methods to replace .id getter with .ss_id
+export class ScrollerToken extends CONFIG.Token.objectClass {
+
+    /** @override */
+    get id() {
+        return this.document.ss_id;
     }
-}, 1000);
+
+    /** @override */
+    get sourceId() {
+        let id = `${this.document.documentName}.${this.document.ss_id}`;
+        if ( this.isPreview ) id += ".preview";
+        return id;
+  }
+}
 
 /** A function containing core workflow for a token move by mouse
  * See Foundry.js, line 47395
@@ -71,9 +77,16 @@ function core_onDragLeftDrop(event) {
  * @param {object} event HTML event
  */
 export async function tokenDragDrop(event) {
+    log(false, "Executing __tokenDragDrop()__ function.");
+
     
     const updates = core_onDragLeftDrop(event);
     Viewport.determineDestination(updates);
+
+    if ( !updates[0].destinationSubScene ) {
+        log(false, "No destination sub-scene identified?");
+        return;
+    }
     const isUpdated = Viewport.parentSceneNeedsUpdate(updates);
 
     const updatedTokenArr = [];
@@ -90,16 +103,18 @@ export async function tokenDragDrop(event) {
         // Animate token movement.  See Foundry.js, line 46650
         promises.push(tok.animate(update));
 
-        const currSubScene = ssc.getSubSceneTileDoc(ssc.activeSceneUUID);
         updatedTokenArr.push({
             token: tok,
-            loc: {x: update.x - currSubScene.x, y: update.y - currSubScene.y},
-            uuid: currSubScene.compendiumSubSceneUUID
+            loc: {x: update.x - update.destinationSubScene.document.x, y: update.y - update.destinationSubScene.document.y},
+            uuid: update.destinationSubScene.document.compendiumSubSceneUUID
         })
     }
     await Promise.all(promises);
-    // Debounce the update of token flags with new loc (and new sub-scene if necessary) for updatedTokenArr
-    debounceTokenUpdate(updatedTokenArr);
+    
+    // Update the token flags to set their new position
+    for (const {token, loc, uuid} of updatedTokenArr) {
+        ssc.updateTokenFlags(token.document, loc, uuid);
+    }
 
     if ( !isUpdated ) return;
 
@@ -114,6 +129,9 @@ export async function tokenDragDrop(event) {
         y: tile.y
     }
 
+    // Save all the id's of the currently controlled tokens.
+    const controlledTokens = [...canvas.tokens.controlledObjects.keys()];
+
     // Remove all sub-scenes and all placeables.
     Viewport.removeAllSubScenes();
 
@@ -122,6 +140,14 @@ export async function tokenDragDrop(event) {
 
     const viewportSubScenesUUIDs = [ssc.activeSceneUUID, ...ssc.ActiveChildrenUUIDs]
     await Viewport.populatePlaceables(viewportSubScenesUUIDs);
+
+    // Control all the previously controlled tokens
+    for (const tokID of controlledTokens) {
+        const tok = ssc.getToken(tokID);
+        tok.object.control();
+        tok.object.visible = true;
+        tok.object.refreshHUD();
+    }
 
     // Calculate a vector.
     // tile will be updated with a new location  
@@ -134,14 +160,9 @@ export async function tokenDragDrop(event) {
     // Will make it look like eveything in the viewport stayed in position, but the frame moved/resized.
     canvas.stage.pivot.set(canvas.stage.pivot.x + vector.x, canvas.stage.pivot.y + vector.y);
 
-    // Update everything.
-    canvas.perception.update({refreshLighting: true, refreshTiles: true}, true);
-
-    // Debounce the update of token flags with new loc (and new sub-scene if necessary) for updatedTokenArr
-    debounceTokenUpdate(updatedTokenArr);
-
     // Cache everything needed for all the new grandchildren
     SSCache.debounceGrandChildCache(ssc.ActiveChildrenUUIDs);
+    log(false, "Completed __tokenDragDrop()__ function.");
 }
 
 /**
