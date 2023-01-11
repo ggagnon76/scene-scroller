@@ -45,3 +45,6 @@ Hooks.on('canvasReady', () => {
 
 /** Token creation */
 Hooks.on('preCreateToken', SSToken.tokenCreate)
+
+/** Token deletion */
+Hooks.on('preDeleteToken', SSToken.tokenDelete)

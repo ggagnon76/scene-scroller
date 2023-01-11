@@ -200,7 +200,7 @@ export function tokenCreate(doc, data, options, userId) {
         log(false, "Token is on overlapping pixels for two sub-scenes.  Choosing the first in the array (random).")
     }
 
-    const finalSubScene = subSceneArr[0];
+    const finalSubScene = subSceneArr[0].document;
 
     // Update the token flags with the required data.
     doc.updateSource({
@@ -217,8 +217,11 @@ export function tokenCreate(doc, data, options, userId) {
     doc._object = tok;
     // Cache the token Document
     ssc.cacheToken(doc);
+
     // Add the token to the scene
-    canvas.tokens.objects.addChild(tok);
+    canvas.scene.collections[doc.collectionName].set(doc.ss_id, doc)
+    canvas[tok.layer.options.name].objects.addChild(tok);
+    if ( tok.layer.quadtree ) tok.layer.quadtree.insert({r: tok.bounds, t: tok});
 
     // Draw token and update eventListeners
     Viewport.placeableDraw(tok);
@@ -229,5 +232,26 @@ export function tokenCreate(doc, data, options, userId) {
     else ssc.selTokenApp.render(true);
 
     // Don't allow creation of token in db.
+    return false;
+}
+
+export function tokenDelete (doc, options, userId) {
+    // Don't alter normal token deletion for non-scene-scroller scenes.
+    if ( !Viewport.isScrollerScene() ) return true;
+
+    // delete token from canvas
+    canvas.tokens.objects.removeChild(doc.object);
+    // delete token from cache and scene flags
+    ssc.deleteToken(doc);
+    // Release control of token
+    doc.object.release();
+    // delete PIXI instance
+    doc.object.destroy(true);
+
+    // Update ScrollerViewSubSceneSelector
+    ssc.selTokenApp.render(true);
+    // Refresh vision
+    Viewport.refreshPerception();
+    // Don't allow deletion in db
     return false;
 }

@@ -661,9 +661,7 @@ function removeAllPlaceables() {
     canvas.tokens.controlledObjects.clear();
 
     for (const tok of canvas.tokens.placeables) {
-        tok.bars.removeChildren();
-        tok.nameplate.removeChildren();
-        tok._destroy();
+        tok.clear();
     }
 
     const placeables = ["walls", "drawings", "lighting", "notes", "sounds", "templates", "tiles", "tokens"];
@@ -701,4 +699,16 @@ export async function updateViewport(newUUID) {
     // Add all placeables
     const newUuidArr = [newUUID, ...ssc.childrenUuids(newUUID)];
     await populatePlaceables(newUuidArr);
+}
+
+export function refreshPerception() {
+    canvas.perception.update({
+        refreshTiles: true,
+        refreshLightSources: true,
+        refreshVisionSources: true,
+        refreshPrimary: true,
+        refreshLighting: true, 
+        refreshVision: true,
+        refreshSounds: true
+    },true);
 }
