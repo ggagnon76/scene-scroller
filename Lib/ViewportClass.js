@@ -611,8 +611,17 @@ export function determineDestination(updates) {
     log(false, "Executing __determineDestination()__ function.");
     for (let update of updates) {
 
+        // Best to test token center, not top left corner.
+        const doc = ssc.getToken(update._id);
+        const d = canvas.dimensions;
+        const tw = doc.width * d.size / 2; // Half of Token Width
+        const th = doc.height * d.size / 2;  // Half of Token Height
+        const tc = {  // Token center
+            x: update.x + tw,
+            y: update.y + th
+        }
         // Determine if the token landed in a new sub-scene, then add update details to updatedTokenArr
-        const inScenes = locInSubScenes({x: update.x, y: update.y})
+        const inScenes = locInSubScenes({x: tc.x, y: tc.y})
 
         // If somehow the token is dragged in empty space, outside of any sub-scene...
         if ( !inScenes.length ) {
