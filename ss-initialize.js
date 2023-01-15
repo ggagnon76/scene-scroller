@@ -6,9 +6,10 @@ export let ssc = undefined; // Scene Scroller Flags Cache
 
 /** Module Initialization */
 
-import * as monkeypatch from "./Lib/Wrap.js"
-import { log, onReady, initialize, isScrollerScene, tokenCreate } from "./Lib/functions.js";
-import { SceneScroller_Cache, SCSC_Flag_Schema } from "./Lib/SceneScroller.js";
+import * as Viewport from "./Lib/ViewportClass.js"
+import * as SSToken from "./Lib/TokenClass.js"
+import { log } from "./Lib/functions.js";
+import { SceneScroller_Cache, SCSC_Flag_Schema } from "./lib/SceneScrollerClass.js";
 
 Hooks.once('init', () => {
     // Wrappers here.
@@ -18,13 +19,12 @@ Hooks.once('ready', () => {
     game.modules.get(ModuleName).struct = SCSC_Flag_Schema;
     game.modules.get(ModuleName).initialize = () => {
         ssc = new SceneScroller_Cache;
-        initialize();
+        Viewport.initialize();
     }
 })
 
 // Ref: Foundryvtt-devMode module.
 Hooks.once('devModeReady', ({ registerPackageDebugFlag }) => {
-    log(false, "Registering 'devModeReady' flag.");
     registerPackageDebugFlag(ModuleName);
 });
 
@@ -35,11 +35,16 @@ Hooks.on('updateScene', (scene, data, options, id) => {
 })
 
 Hooks.on('canvasReady', () => {
-    if ( isScrollerScene() ) {
+    if ( Viewport.isScrollerScene() ) {
+        log(false, "CanvasReady hook: Scene has Scene Scroller Flags.")
         ssc = new SceneScroller_Cache;
-        onReady();
+        if ( !ssc.activeSceneUUID ) return;
+        Viewport.onReady();
     }
 });
 
 /** Token creation */
-Hooks.on('preCreateToken', tokenCreate)
+Hooks.on('preCreateToken', SSToken.tokenCreate)
+
+/** Token deletion */
+Hooks.on('preDeleteToken', SSToken.tokenDelete)
