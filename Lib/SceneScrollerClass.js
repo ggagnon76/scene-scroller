@@ -1,7 +1,7 @@
 import { ModuleName, ssc } from "../ss-initialize.js";
 import * as Viewport from "./ViewportClass.js";
 import { ScrollerTokenDocument } from "./TokenClass.js";
-import { log } from "./functions.js";
+import { getUUID, log } from "./functions.js";
 
 /**
  * A class that will be publicly available containing a schema for
@@ -327,6 +327,14 @@ export class SceneScroller_Cache {
         log(false, `Wall with id ${wallDoc.id} has been deleted from cache.`);
     }
 
+    async updateDoorState(wallDoc, state) {
+        if ( !this.walls.has(wallDoc.id) ) return;
+        this.walls.set(wallDoc.id, wallDoc);
+        // Update the compendium source too.
+        const sourceScene = ssc.compendiumSourceFromCache(wallDoc.parentUUID[0]);
+        await sourceScene.updateEmbeddedDocuments(wallDoc.constructor.documentName, [{_id: wallDoc.id, ds: state}])
+    }
+    
     /**
      * Adds a Light Document to the cache
      * @param {object} lightDoc A Foundry Light Document
