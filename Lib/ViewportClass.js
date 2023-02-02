@@ -571,6 +571,9 @@ function _doorControlLeftClick(event) {
     /** This portion changed to not attempt to save to db. */
     this.document.ds = state === states.CLOSED ? states.OPEN : states.CLOSED;
     drawDoorControl(this);
+    /** Save the door state in cache and in compendium source */
+    ssc.updateDoorState(this.document, {doorState: this.document.ds});
+
 
     // Doesn't make sense that this has to be done.... ???
     for (const token of canvas.tokens.placeables) {
@@ -601,6 +604,9 @@ function _doorControlRightClick(event) {
     /** This portion changed to not attempt to save to db. */
     this.document.ds = state === states.LOCKED ? states.CLOSED : states.LOCKED;
     drawDoorControl(this);
+
+    /** Save the door state in cache and in compendium source */
+    ssc.updateDoorState(this.document, {doorState: this.document.ds});
 }
 
 /**
