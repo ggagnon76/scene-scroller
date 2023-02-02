@@ -327,12 +327,11 @@ export class SceneScroller_Cache {
         log(false, `Wall with id ${wallDoc.id} has been deleted from cache.`);
     }
 
-    async updateDoorState(wallDoc, state) {
-        if ( !this.walls.has(wallDoc.id) ) return;
-        this.walls.set(wallDoc.id, wallDoc);
+    async updateDoorState(wallDoc, {doorState = undefined} ={}) {
+        wallDoc.updateSource({ds: doorState})
         // Update the compendium source too.
         const sourceScene = ssc.compendiumSourceFromCache(wallDoc.parentUUID[0]);
-        await sourceScene.updateEmbeddedDocuments(wallDoc.constructor.documentName, [{_id: wallDoc.id, ds: state}])
+        await sourceScene.updateEmbeddedDocuments(wallDoc.constructor.documentName, [{_id: wallDoc.id, ds: doorState}])
     }
     
     /**
