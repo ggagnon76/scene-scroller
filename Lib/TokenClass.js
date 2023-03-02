@@ -141,14 +141,6 @@ export async function tokenDragDrop(event) {
     const viewportSubScenesUUIDs = [ssc.activeSceneUUID, ...ssc.ActiveChildrenUUIDs]
     await Viewport.populatePlaceables(viewportSubScenesUUIDs);
 
-    // Control all the previously controlled tokens
-    for (const tokID of controlledTokens) {
-        const tok = ssc.getToken(tokID);
-        tok.object.control();
-        tok.object.visible = true;
-        tok.object.refreshHUD();
-    }
-
     // Calculate a vector.
     // tile will be updated with a new location  
     const vector = {
@@ -159,6 +151,16 @@ export async function tokenDragDrop(event) {
     // Pan the scene by the vector to maintain viewport orientation relative to the new activeScene
     // Will make it look like eveything in the viewport stayed in position, but the frame moved/resized.
     canvas.stage.pivot.set(canvas.stage.pivot.x + vector.x, canvas.stage.pivot.y + vector.y);
+
+    // Control all the previously controlled tokens
+    for (const tokID of controlledTokens) {
+        const tok = ssc.getToken(tokID);
+        tok.object.control();
+        tok.object.visible = true;
+        //tok.object.refreshHUD();
+        tok.object.updateVisionSource();
+    }
+    console.log("**********UPDATED TOKEN VISION SOURCE***********")
 
     // Cache everything needed for all the new grandchildren
     SSCache.debounceGrandChildCache(ssc.ActiveChildrenUUIDs);

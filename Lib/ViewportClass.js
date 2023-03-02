@@ -195,8 +195,8 @@ export async function localResizeScene(area) {
     canvas.primary.sprite.mask = canvas.primary.mask = canvas.perception.mask = canvas.effects.mask = canvas.interface.grid.mask = canvas.masks.canvas;
 
     //canvas.primary.draw();
-    canvas.effects.illumination.draw();
-    canvas.effects.visibility.draw();
+    await canvas.effects.illumination.draw();
+    await canvas.effects.visibility.draw();
 }
 
 /**
